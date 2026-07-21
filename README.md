@@ -6,7 +6,7 @@ It comes in two parts, and you can use either one on its own or both together:
 
 - **The Engine** — a script you add inside NovelAI itself. Works everywhere, no browser extension required.
 - **The Bridge + HUD** — a companion userscript (needs Violentmonkey or Tampermonkey) that adds a floating panel with richer visuals: a real map you can drag around, character portraits, image galleries, and more themes.
-- <https://greasyfork.org/en/scripts/587717-character-engine-bridge-hud-v2-29-0>
+- <https://greasyfork.org/en/scripts/587717-character-engine-bridge-hud-v2-41-1>
 
 If you only install the Engine, you'll get a row of toolbar buttons inside NovelAI. If you also install the Bridge, you'll get a floating widget you can pop open on top of your story. You can run both at once — see [Switching Modes](#switching-modes) below.
 
