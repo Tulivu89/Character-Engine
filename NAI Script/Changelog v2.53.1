@@ -1,0 +1,23 @@
+# Changelog v2.53.1
+
+## Features
+
+- **Chat launcher** — texting now opens in a proper in-app contacts-style view instead of a header dropdown, with all chat settings (thoughts, photos, avatar size/shape) living in one place at the top.
+- **Per-message controls in chat** — edit, regenerate, or delete individual messages right from the conversation.
+- **Send status indicator** — the Send button now shows what's happening ("replying...", "thinking...", "sending photo...") instead of leaving you guessing.
+- **"Thinking" indicator now covers images too** — it used to only show during text generation; now it also shows while an image is being generated.
+- **Witch's Hollow theme refresh** — new full-color artwork for the toggle icon and the little critters (bat/spider/snake), plus a readability pass so text is easier to read against the theme's colors.
+- **"Last thought" is now a permanent, always-visible display** in the chat menu instead of something you have to tap to reveal.
+
+## Fixes
+
+- **Wizard crash fixed** — clicking Factions in World-Build Wizard threw an error and locked you out of the Wizard entirely. Fixed.
+- **Character thoughts are no longer in ALL CAPS**, and now read as a natural first-person thought in the character's own voice instead of a flat, clinical description.
+- **Fixed doubled curly braces** corrupting chat and wizard-chat text on reopening or resuming a conversation.
+- **Fixed old saved chats sometimes double-wrapping** their formatting when reopened.
+- **Fixed equipped items not staying in sync** across the different places you can equip them (entity editor, character editor, chat HUD) — equipping an item in one place now correctly updates everywhere.
+- **Fixed equipped items showing their name instead of their description** in image generation prompts.
+- **Fixed the chat settings menu sometimes appearing as an empty box** the first time you opened it.
+- **Fixed the HUD reopening to the wrong screen** — it now correctly returns to the chat menu if that's what you had open, instead of always jumping to the last character/item you inspected.
+- **Fixed long "last thought" messages running off-screen** in toast popups, and swapped a few leftover emoji icons in the chat settings row for the app's proper icon set.
+- Removed an outdated instruction telling you to type in `{ }` blocks — that's handled automatically now and was no longer accurate.
