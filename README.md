@@ -71,7 +71,7 @@ A profile is one character's whole record in one place. You reach it by tapping 
 
 ### The top of the page
 
-The character's **name**, with *(you)* after it if they're the protagonist. Tap the name to open **Identity**, where the basics live: species, age, pronouns, the descriptive bones.
+The character's **name**. Tap the name to open **Identity**, where the basics live: species, age, pronouns, the descriptive bones.
 
 Beneath it, three small switches. These matter more than their size suggests.
 
