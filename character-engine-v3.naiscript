@@ -4,9 +4,9 @@ id: ce000002-0000-0000-0000-000000000001
 name: Character Engine
 createdAt: 1776400000000
 updatedAt: 1789040000000
-version: 3.0.0
+version: 3.0.8
 author: AmbiProp
-description: Character Engine v3.0.0
+description: Character Engine v3.0.8
 memoryLimit: 128
 ---*/
 
@@ -37,11 +37,17 @@ memoryLimit: 128
 // vacant so every "SECTION N" reference in this file and in the CE-INDEX keeps
 // meaning what it meant.
 //
-// CAPABILITY WITHOUT A DOOR — three verbs survive the sweep with no way to reach
-// them. Each is real and each needs a button, not a deletion:
+// CAPABILITY WITHOUT A DOOR — two verbs still survive the sweep with no way to
+// reach them. Each is real and each needs a button, not a deletion:
 //   syncAllLorebooks       repair/create every lorebook entry  -> Settings
 //   copyEntity             duplicate an entity, optionally deep -> Entity
-//   openDynamicRankPicker  set a character's dynamic priority   -> Profile
+//
+// [v3.0.1 PROFILE-DOORS] The third now has one:
+//   openDynamicRankPicker  set a character's dynamic priority   -> Profile > Settings,
+//                          RE-IMPLEMENTED as CE_PICKER_DEFS.dynamicRank rather than
+//                          called. The native function is now itself door-less and is
+//                          a deletion candidate, not a capability gap — do not add a
+//                          second door for it.
 // ============================================================================
 
 // ============================================================================
@@ -331,7 +337,8 @@ interface CharacterRecord {
     // [v2.98.0 PATTERN-STORED, per user] Explicit pattern identity, replacing pure
     // derivation. Empty string / undefined = "not chosen" (or a pre-v2.98.0 record,
     // resolved by _ceResolveCharPattern's legacy scan). One of CE_PATTERN_IDS
-    // ('contradiction' | 'wantneed' | 'defense' | 'ruleset' | 'appetite' | 'mask') or ''
+    // ('contradiction' | 'wantneed' | 'defense' | 'ruleset' | 'appetite' | 'mask'
+    //  | 'collateral' | 'obligation') or ''   -- [v3.0.1 PATTERN-8]
     // -- validated against that list wherever it is written, never trusted raw.
     //
     // This DOES NOT retire the scan; it changes which one is authoritative. Storing was
@@ -448,6 +455,17 @@ interface EntityRecord {
     imgHeight?: number;
     eventDayTarget?: number;   // [v0.9.9.2] absolute day this narrative is due; drives the AN countdown when tracked
     icon?: string;           // emoji or short glyph shown in bridge entity pickers and map nodes
+    // [v3.0.7 MAP-KIND] 'region' | 'structure' | 'interior'. HOW THIS PLACE IS DRAWN, and
+    // nothing else -- it gates no travel, no injection, no containment, and no rule that
+    // lives outside the world-map surface.
+    //
+    // IT IS A FIELD RATHER THAN A FUNCTION OF DEPTH, and the reason is the one thing the
+    // tree cannot know: SCOPE. Depth 0 is a continent in one story and a suburban house in
+    // the next, so "depth 2 means a building" holds only for hierarchies that happen to be
+    // six levels deep. Deriving it would have quietly mis-drawn every story that is not
+    // epic-scaled, and nothing in the record says which kind of story this is. The author
+    // knows; the data does not.
+    mapKind?: string;
     createdAt: number;
     updatedAt: number;
 }
@@ -464,6 +482,7 @@ interface EntityMeta {
     presentCharacterCount: number;
     state: string;
     icon?: string;           // propagated from EntityRecord for bridge display
+    mapKind?: string;        // [v3.0.7 MAP-KIND] propagated so the map needs no full record read
     // [CE-STRIP v2.1.5] gated/isVehicle removed from EntityMeta — dead Actions/Travel remnants.
 }
 
@@ -1007,7 +1026,7 @@ var STORAGE_KEY_CHAR_VISUAL_CACHE = 'ae_char_visual_cache';  // CharacterVisualR
 // Engine → Bridge (outbound from engine, received by bridge handleEngineMessage)
 const EVT_SCENE_STATE    = 'SCENE_STATE_UPDATE';      // SceneStatePayload — HUD rerender
 const EVT_CHAR_DATA_SYNC = 'CHARACTER_DATA_SYNC';     // CharacterVisualRecord[] — roster update
-const EVT_GENERATE_IMAGE = 'GENERATE_IMAGE';           // image payload — bridge generates and displays
+const EVT_GENERATE_IMAGE = 'GENERATE_IMAGE';           // image payload — bridge generates and displays. SEND VIA ceBroadcastImageGen, never broadcastToTM directly — see that function.
 const EVT_CLICK_GEN      = 'CLICK_GENERATE_NOW';      // tells bridge to click the NAI Generate button
 const EVT_STORY_ID_SYNC  = 'STORY_ID_SYNC';           // current story ID after handshake
 const EVT_OPEN_ROSTER    = 'OPEN_ROSTER';             // tells bridge to open the character roster
@@ -6578,7 +6597,7 @@ async function buildCharChatImagePrompt(description: string, speakerName: string
 // agree or the bubble can never find its own image.
 async function dispatchCharChatImage(uuid: string, prompt: string, chars: { name: string; visuals: string; uc: string }[], speakerName: string, isPov: boolean): Promise<void> {
     let ccCompiled = compileActiveImageFields();
-    await broadcastToTM(EVT_GENERATE_IMAGE, {
+    await ceBroadcastImageGen({
         uuid:             uuid,
         prompt:           prompt,
         characters:       chars,
@@ -7020,15 +7039,6 @@ async function aeDiagGenerate(tag: string, messages: any[], params: any, signal?
     // and never allowed to throw: a failure to reset a counter must not be able to take
     // down the generation it is attached to.
     _ceYoinkRunReset().catch(function() {});
-    // [v2.139.0 STYLE2 GEN-RAIL] SS10.1 #3 / SS10.2: the shell-scope generation rail hangs
-    // HERE and nowhere else, because this wrapper is already the sole call site of
-    // api.v1.generate() in the file (see the note above -- verified by grep, and the
-    // _diagProbeActive save/restore below depends on the same fact). Begin/end are
-    // deliberately in the same try/finally shape as _diagProbeActive: the rail must clear
-    // on the error path exactly as reliably as on the success path, or one thrown
-    // generation leaves a bar running across the top of the shell for the rest of the
-    // session. Both calls swallow everything internally and cannot throw in here.
-    ceGenBegin();
     let t0 = Date.now();
     let b0o = diagBudO(), b0i = diagBudI();
     let ccProbePrev = _diagProbeActive;
@@ -7052,7 +7062,6 @@ async function aeDiagGenerate(tag: string, messages: any[], params: any, signal?
         throw e;
     } finally {
         _diagProbeActive = ccProbePrev;
-        ceGenEnd();
     }
 }
 // ── [DIAG GEN] end ────────────────────────────────────────────────────────────
@@ -7061,15 +7070,15 @@ function executeYoinkGenerationAttempt(messages: any[]): Promise<string> {
     return new Promise(function(resolve, reject) {
         if (_aeYoink.active) { reject(new Error('A yoink generation is already in progress')); return; }
         if (ae_genInFlight || ae_lock) { reject(new Error('Editor is busy; try again in a moment')); return; }
-        // [v0.9.7.12] Budget floor: < 80 tokens remaining = rate limit imminent.
-        // The runtime state generators already guard at 220; 80 is a softer floor for
-        // interactive wizard calls so the user gets a clear message, not a raw API error.
-        const ygBudget = api.v1.script.getAllowedOutput ? api.v1.script.getAllowedOutput() : 9999;
-        if (ygBudget < 80) {
-            const ygMsg = 'Script generation budget is low. Wait a moment, then try again.';
-            api.v1.ui.toast(ygMsg, { type: 'warning', autoClose: 4000 });
-            reject(new Error(ygMsg)); return;
-        }
+        // [v3.0.1 YOINK-UNCAP] REMOVED: a `getAllowedOutput() < 80` refusal that used to sit
+        // here. It dated from v0.9.7.12, when editor.generate() was believed to share the
+        // script-level budget; v2.94.0's live measurement found it does NOT draw down
+        // getAllowedOutput() at all. So the floor was refusing a FREE generation on the
+        // grounds that a budget it does not spend was low -- which is precisely the moment
+        // the free path is most worth taking, and precisely when the author saw a refusal
+        // instead. Nothing is lost by removing it: if NAI does reject the call, the
+        // editor.generate().catch below already converts a limit/budget error into the same
+        // human-readable toast, only now on evidence rather than on prediction.
         _aeYoink.active = true;
         _aeYoink.messages = messages;
         _aeYoink.responseText = '';
@@ -7155,11 +7164,23 @@ var AE_YOINK_MODEL_PIN_ENABLED = false;
 // every other CE generator, so alternating deliberately is ordinary use of the documented
 // surface rather than a workaround.
 //
-// The cap is the OBSERVED number, not a derived one. If NAI changes the metering this is
-// the single number to re-measure, and the auto path degrades safely if it is wrong in
-// either direction: too high just means a wasted yoink attempt that falls back to direct,
-// too low means leaving free generations unused.
-const AE_YOINK_RUN_MAX = 3;
+// [v3.0.1 YOINK-UNCAP, per user: "it is placing an artificial limit"] THE CAP IS NOW OFF
+// BY DEFAULT (0 = unlimited). v2.94.0's own note already contained the argument against
+// it: "the auto path degrades safely if it is wrong in either direction: too high just
+// means a wasted yoink attempt that falls back to direct, too low means leaving free
+// generations unused." Those two are not symmetric. A too-high cap costs one wasted
+// attempt that self-corrects on the same click, because an empty yoink in auto mode
+// already falls straight through to a metered call (see generateSlotOptions). A too-low
+// cap is invisible and permanent: the author is silently moved onto the metered path and
+// billed for generations NAI would still have served free, with nothing on any surface
+// saying so.
+//
+// So the counter stops being the gate and the EMPTY RESPONSE becomes the gate -- which is
+// the only honest detector, since it is NAI's own answer rather than our guess at NAI's
+// metering. The counter itself is kept: it still counts, still resets on any metered call,
+// and still feeds _ceFreeRunsReport, so re-imposing a cap is a one-integer change if NAI
+// ever starts hard-failing instead of returning empty.
+const AE_YOINK_RUN_MAX = 0;   // 0 = unlimited; any positive integer re-arms the hard cap
 const STORAGE_YOINK_RUN = 'ae_yoink_run';   // tempStorage: consecutive yoink calls since the last metered one
 
 // [v2.94.0 SLOT-YOINK-AUTO] tempStorage, not a module var: the engine is unloaded on story
@@ -7201,10 +7222,19 @@ async function _ceYoinkRunReset(): Promise<void> { await _ceYoinkRunSet(0); }
 async function _ceFreeRunsReport(): Promise<{ used: number; max: number; left: number }> {
     try {
         const frUsed = await _ceYoinkRunGet();
+        // [v3.0.1 YOINK-UNCAP] left = -1 is the UNLIMITED sentinel, not an error and not a
+        // zero. A surface rendering this must test for it explicitly: "0 left" and "no cap"
+        // are opposite states and collapsing them would tell the author to stop generating
+        // at exactly the moment generation became free.
+        if (AE_YOINK_RUN_MAX <= 0) return { used: frUsed, max: 0, left: -1 };
         return { used: frUsed, max: AE_YOINK_RUN_MAX, left: Math.max(0, AE_YOINK_RUN_MAX - frUsed) };
     } catch (e) {
         // Never throw into a reply path -- a missing readout is a cosmetic loss, a thrown
         // one loses the options the author just paid for.
+        // [v3.0.1 YOINK-UNCAP] Must carry the sentinel too. Returning left: 0 here (which
+        // is what `left: AE_YOINK_RUN_MAX` now evaluates to when uncapped) would report
+        // "no free runs remain" from the one branch that knows nothing at all.
+        if (AE_YOINK_RUN_MAX <= 0) return { used: 0, max: 0, left: -1 };
         return { used: 0, max: AE_YOINK_RUN_MAX, left: AE_YOINK_RUN_MAX };
     }
 }
@@ -7316,21 +7346,6 @@ async function executeYoinkGeneration(messages: any[], opts?: AEYoinkOptions): P
         }
     }
 
-    // [v2.140.0 STYLE2 GEN-RAIL-YOINK, per user] The generation rail was previously wired
-    // ONLY to aeDiagGenerate (the direct/budgeted path). Per the user: yoink and direct are
-    // used TOGETHER by design, not as alternates -- three yoink generations are available
-    // between direct calls specifically to widen the effective budget -- so a silent yoink
-    // is exactly the SS10 failure mode ("a silent one is the worst failure mode on the
-    // surface") for a large share of real usage, not an edge case.
-    // WIRED HERE, at executeYoinkGeneration, NOT at ygAttemptWithWatchdog or
-    // executeYoinkGenerationAttempt: this is the one function every real caller (18 call
-    // sites, grepped) goes through, and it already wraps the ERROR RETRY and CORRECTIVE
-    // RETRY internally. Wiring at the attempt level would flicker the rail off between
-    // retries of the SAME logical generation; wiring here shows one continuous segment for
-    // one logical call, matching what the user actually asked for and did not get.
-    // SAME try/finally AS THE EXISTING MODEL-PIN RESTORE, not a second try/finally around
-    // it: one exit path, both cleanups guaranteed together.
-    ceGenBegin();
     try {
         let ygRaw = '';
         let ygErrorRetried = false;
@@ -7380,7 +7395,6 @@ async function executeYoinkGeneration(messages: any[], opts?: AEYoinkOptions): P
             outLen: (ygRaw || '').length, budgetOut: ygB0o, budgetIn: ygB0i });
         return ygRaw;
     } finally {
-        ceGenEnd();
         if (ygPrior) {
             let ygRestore: any = { model: ygPrior.model };
             if (ygPrior.max_tokens !== undefined) ygRestore.max_tokens = ygPrior.max_tokens;
@@ -9981,7 +9995,10 @@ async function saveEntity(ent: EntityRecord): Promise<void> {
         childCount: idx.filter(function(m) { return m.parentId === ent.id; }).length,
         presentCharacterCount: ent.presentCharacterIds.filter(Boolean).length,
         state: ent.state,
-        icon: ent.icon || undefined
+        icon: ent.icon || undefined,
+        // The map draws from the index, never from full records -- a world of two hundred
+        // places would otherwise be two hundred storage reads per repaint.
+        mapKind: (ent as any).mapKind || undefined
         // [CE-STRIP v2.1.5] gated/isVehicle/hasGlobalAutoTrigger removed — dead Actions/Travel remnants.
     };
 
@@ -10175,21 +10192,21 @@ const BUILTIN_FACETS: { id: string; slot: string; label: string; placeholder: st
 
     // ── Fixed slots ──
     { id: 'ce_slot_presence', slot: 'presence', kind: 'slot', label: 'Presence', placeholder: 'What a stranger perceives on first sight…',
-      instructions: 'Describe what a stranger perceives on first sight: build and bearing, then skin, hair, and eyes, then voice and the way they move. Two–three sentences, under 60 words. Sweep from silhouette to detail — do not hunt for one striking feature to lead with. Only what is perceivable from outside; no history, no motive. Avoid piercing eyes, easy grace, "commands attention," and invented oddities such as unusual hands, unnatural height, or scars unless the seed material establishes one.' },
+      instructions: 'Describe what a stranger perceives on first sight: build and bearing, then skin, hair, and eyes, then voice and the way they move. Two–three sentences, under 60 words. Sweep from silhouette to detail — do not hunt for one striking feature to lead with. Only what is perceivable from outside; no history, no motive. Avoid piercing eyes, smirks, easy grace, "commands attention," "ethereal," and invented oddities such as unusual hands, unnatural height, or scars unless the seed material establishes one.' },
     { id: 'ce_slot_core', slot: 'core', kind: 'slot', label: 'Core', placeholder: 'The one thing they will not let go of…',
-      instructions: 'State the one thing this character will not let go of — the person, belief, wound, or hunger everything else bends around. One sentence, under 30 words. It must still be true if every current plan fails. Not a goal with an endpoint and not a personality trait. Avoid "freedom," "family," and anything they could simply achieve and be finished with.' },
+      instructions: 'State the one thing this character will not let go of — the person, belief, wound, or hunger everything else bends around. One sentence, under 30 words. It must still be true if every current plan fails. Not a goal with an endpoint and not a personality trait. Avoid "freedom," "family," "protecting those they love," and anything they could simply achieve and be finished with.' },
     { id: 'ce_slot_pursuit', slot: 'pursuit', kind: 'slot', label: 'Pursuit', placeholder: 'What they are actively going after right now…',
-      instructions: 'State what this character is actively going after right now — the concrete objective they could be seen working on this scene. One–two sentences, under 40 words. Name the object, not the value: "get her brother’s name off the ledger," not "seeks justice." Phrase it so it can plainly succeed or fail. Leave empty if they are chasing nothing; that is a complete character, not an unfinished one. Avoid restating the Core and avoid revenge unless the profile earns it.' },
+      instructions: 'State what this character is actively going after right now — the concrete objective they could be seen working on this scene. One–two sentences, under 40 words. Name the object, not the value: "get her brother’s name off the ledger," not "seeks justice." Phrase it so it can plainly succeed or fail. Leave empty if they are chasing nothing. Avoid restating the Core, avoid revenge unless the profile earns it, and never use the words "quest" or "destiny".' },
 
     // ── Resistance — one per pattern. What holding the Core COSTS them. ──
     { id: 'ce_slot_resist_contradiction', slot: 'resistance', kind: 'slot', label: 'Resistance · Contradiction', placeholder: 'The second thing also true, pulling against the Core…',
-      instructions: 'Name the second thing that is also true of them and pulls against the Core — a competing truth, not a flaw. Under 40 words. Both halves must show in behaviour and neither may be the "real" one. Avoid "tough but caring" and pairings that resolve too neatly.' },
+      instructions: 'Name the second thing that is also true of them and pulls against the Core — a competing truth, not a flaw. Under 40 words. Both halves must show in behaviour and neither may be the "real" one. Avoid "tough but caring," "pushing people away to protect them," and pairings that resolve too neatly.' },
     { id: 'ce_slot_resist_wantneed', slot: 'resistance', kind: 'slot', label: 'Resistance · Want / Need', placeholder: 'The substitute they chase instead…',
-      instructions: 'State the substitute this character chases in place of the Core — what they sincerely believe will settle it, and why it cannot. Under 40 words. They must endorse the belief fully. Avoid making them self-aware about it, and avoid substitutes so obviously wrong that no one would hold them.' },
+      instructions: 'State the substitute this character chases in place of the Core — what they sincerely believe will settle it, and why it cannot. Under 40 words. They must endorse the belief fully. Avoid making them self-aware about it, and avoid substitutes so obviously wrong or cartoonishly evil that no one would hold them.' },
     { id: 'ce_slot_resist_defense', slot: 'resistance', kind: 'slot', label: 'Resistance · Defense', placeholder: 'What holding the Core exposes them to…',
-      instructions: 'Name what holding the Core exposes them to — the thing they cannot afford to have seen. Under 40 words. Specific, concealable, and live now rather than a past event. Avoid generic trauma and anything already obvious from outside.' },
+      instructions: 'Name what holding the Core exposes them to — the thing they cannot afford to have seen. Under 40 words. Specific, concealable, and live now rather than a past event. Avoid generic trauma, "fear of vulnerability," and anything already obvious from outside.' },
     { id: 'ce_slot_resist_ruleset', slot: 'resistance', kind: 'slot', label: 'Resistance · Rule set', placeholder: 'The laws they keep, and the one that will break…',
-      instructions: 'State two to four laws this character keeps while pursuing the Core, phrased as they would phrase them, then name the one the Core will eventually force them to break. Under 45 words. Rules constrain behaviour; virtues do not. Avoid "never lies" and codes that cost nothing to keep.' },
+      instructions: 'State two to four laws this character keeps while pursuing the Core, phrased as they would phrase them, then name the one the Core will eventually force them to break. Under 45 words. Rules constrain behaviour; virtues do not. Avoid "never lies," "never harms the innocent," and codes that cost nothing to keep.' },
     { id: 'ce_slot_resist_appetite', slot: 'resistance', kind: 'slot', label: 'Resistance · Appetite', placeholder: 'What they cannot refuse, and the one line they keep…',
       instructions: 'Name what this character cannot refuse and the one thing they will not touch. Under 40 words. The appetite serves or substitutes for the Core; the refusal is the single edge they keep. Sensory and specific. Avoid moralising, and avoid appetites with no line attached.' },
     { id: 'ce_slot_resist_mask', slot: 'resistance', kind: 'slot', label: 'Resistance · Function mask', placeholder: 'The role, and what it forbids…',
@@ -10197,13 +10214,13 @@ const BUILTIN_FACETS: { id: string; slot: string; label: string; placeholder: st
 
     // ── Conduct — one per pattern. The standing move when the cost comes due. ──
     { id: 'ce_slot_conduct_contradiction', slot: 'conduct', kind: 'slot', label: 'Conduct · Contradiction', placeholder: 'Which side shows, and what brings the other out…',
-      instructions: 'Describe which side shows by default and the specific circumstance that brings the other out. Two sentences, under 50 words. Observable behaviour for each side, not feelings. Avoid "the walls come down" and switches that happen for no reason.' },
+      instructions: 'Describe which side shows by default and the specific circumstance that brings the other out. Two sentences, under 50 words. Observable behaviour for each side, not feelings. Avoid "the walls come down," "beneath the cold exterior," and switches that happen for no reason.' },
     { id: 'ce_slot_conduct_wantneed', slot: 'conduct', kind: 'slot', label: 'Conduct · Want / Need', placeholder: 'How they pursue the substitute, and who pays…',
       instructions: 'Describe how they pursue the substitute and who pays for it. Two sentences, under 50 words. Show the pursuit as something others watch happen. Avoid clean success and avoid them learning the lesson on their own.' },
     { id: 'ce_slot_conduct_defense', slot: 'conduct', kind: 'slot', label: 'Conduct · Defense', placeholder: 'The avoidance move, and the tell that leaks…',
-      instructions: 'Describe their avoidance move when the sore spot is approached, and the one tell that leaks anyway. Two sentences, under 50 words. Both observable — a deflection and a crack in it. Avoid changing the subject as the only tactic.' },
+      instructions: 'Describe their avoidance move when the sore spot is approached, and the one tell that leaks anyway. Two sentences, under 50 words. Both observable — a deflection and a crack in it. Avoid changing the subject as the only tactic, or sudden flashes of anger.' },
     { id: 'ce_slot_conduct_ruleset', slot: 'conduct', kind: 'slot', label: 'Conduct · Rule set', placeholder: 'How they keep the rules, and what they do when others do not…',
-      instructions: 'Describe how they keep the rules day to day, and what they do when someone breaks one in front of them — enforce, withdraw, or absorb. Two sentences, under 50 words. Visible action, not stated belief. Avoid lecturing as the only response.' },
+      instructions: 'Describe how they keep the rules day to day, and what they do when someone breaks one in front of them — enforce, withdraw, or absorb. Two sentences, under 50 words. Visible action, not stated belief. Avoid lecturing or drawing a weapon as the only responses.' },
     { id: 'ce_slot_conduct_appetite', slot: 'conduct', kind: 'slot', label: 'Conduct · Appetite', placeholder: 'The manner of taking, asking, or indulging…',
       instructions: 'Describe how they go after what they want — the manner of taking, asking, or indulging, and how open or sly they are about it. Two sentences, under 50 words. Show it in action. Avoid making them purely predatory or purely restrained.' },
     { id: 'ce_slot_conduct_mask', slot: 'conduct', kind: 'slot', label: 'Conduct · Function mask', placeholder: 'The performance, and the tell that slips…',
@@ -10212,34 +10229,34 @@ const BUILTIN_FACETS: { id: string; slot: string; label: string; placeholder: st
     // ══════════════════════════════════════════════════════════════════════════
     // FACETS — optional, freely addable, grouped by the slot each one deepens.
     // ══════════════════════════════════════════════════════════════════════════
+
     // ── Presence ──
-    { id: 'ce_fx_signature', slot: 'presence', label: 'Signature detail', placeholder: 'The one thing people describe them by\u2026',
-      instructions: 'Name the single physical detail someone would use to describe this character to a stranger. One sentence, under 25 words, concrete and visible. Not a personality trait. Avoid scars, unusual eye colours, and anything already stated elsewhere in the profile.' },
-    { id: 'ce_fx_carry', slot: 'presence', label: 'Clothing & carry', placeholder: 'What they wear and what is always on them\u2026',
-      instructions: 'Describe what this character wears day to day and the one object always on their person. Two sentences, under 45 words. Say what the clothing is FOR — weather, work, status, concealment. Avoid hooded cloaks, and avoid describing the body itself.' },
-    { id: 'ce_fx_scent', slot: 'presence', label: 'Scent & sound', placeholder: 'How they register beyond sight\u2026',
-      instructions: 'Describe how this character registers to senses other than sight: what they smell of, and the sound they make moving or being nearby. Two sentences, under 35 words. Ground both in their actual life and work. Avoid generic florals, leather, and woodsmoke unless the profile earns them.' },
-    { id: 'ce_fx_condition', slot: 'presence', label: 'Condition', placeholder: 'How their body is doing right now\u2026',
-      instructions: 'State how this character\u2019s body is doing at this point in the story: rested or worn, fed or not, whole or carrying something. Present tense, under 35 words. This is a current state and expected to change, so avoid permanent traits and old injuries that no longer affect them.' },
-    { id: 'ce_fx_bearing', slot: 'presence', label: 'Bearing', placeholder: 'How they occupy space\u2026',
-      instructions: 'Describe how this character occupies space: what they do with their weight when standing still, how much room they take, where they put themselves in a room. Two sentences, under 35 words. Avoid arms crossed, leaning in doorways, and looming.' },
+    { id: 'ce_fx_signature', slot: 'presence', label: 'Signature detail', placeholder: 'The one thing people describe them by…',
+      instructions: 'Name the single physical detail someone would use to describe this character to a stranger. One sentence, under 25 words, concrete and visible. Not a personality trait. Avoid scars, unusual eye colours, "an aura of mystery", and anything already stated elsewhere in the profile.' },
+    { id: 'ce_fx_carry', slot: 'presence', label: 'Clothing & carry', placeholder: 'What they wear and what is always on them…',
+      instructions: 'Describe what this character wears day to day and the one object always on their person. Two sentences, under 45 words. Say what the clothing is FOR — weather, work, status, concealment. Avoid hooded cloaks, impossible hidden weapons, and avoid describing the body itself.' },
+    { id: 'ce_fx_scent', slot: 'presence', label: 'Scent & sound', placeholder: 'How they register beyond sight…',
+      instructions: 'Describe how this character registers to senses other than sight: what they smell of, and the sound they make moving or being nearby. Two sentences, under 35 words. Ground both in their actual life and work. Avoid generic florals, leather, ozone, and woodsmoke unless the profile earns them.' },
+    { id: 'ce_fx_condition', slot: 'presence', label: 'Condition', placeholder: 'How their body is doing right now…',
+      instructions: 'State how this character’s body is doing at this point in the story: rested or worn, fed or not, whole or carrying something. Present tense, under 35 words. This is a current state and expected to change, so avoid permanent traits and old injuries that no longer affect them.' },
+    { id: 'ce_fx_bearing', slot: 'presence', label: 'Bearing', placeholder: 'How they occupy space…',
+      instructions: 'Describe how this character occupies space: what they do with their weight when standing still, how much room they take, where they put themselves in a room. Two sentences, under 35 words. Avoid arms crossed, leaning in doorways, lounging with false ease, and looming.' },
 
     // ── Drive ──
-    { id: 'ce_fx_errand', slot: 'drive', label: 'Immediate errand', placeholder: 'The small task they are on this week\u2026',
-      instructions: 'State the small concrete task this character is trying to finish in the next few days. Must be completable on the page. One or two sentences, under 30 words. Not their life goal — the errand. Avoid anything phrased as a quest.' },
-    { id: 'ce_fx_ambition', slot: 'drive', label: 'Long ambition', placeholder: 'Where they want to be in ten years\u2026',
+    { id: 'ce_fx_errand', slot: 'drive', label: 'Immediate errand', placeholder: 'The small task they are on this week…',
+      instructions: 'State the small concrete task this character is trying to finish in the next few days. Must be completable on the page. One or two sentences, under 30 words. Not their life goal — the errand. Avoid anything phrased as a quest or destiny.' },
+    { id: 'ce_fx_ambition', slot: 'drive', label: 'Long ambition', placeholder: 'Where they want to be in ten years…',
       instructions: 'State where this character wants to be in ten years, in the terms they would use themselves. Under 35 words. Concrete and material rather than a virtue. Avoid revenge, redemption, and any goal phrased as freedom, justice, or belonging.' },
-    { id: 'ce_fx_forwhom', slot: 'drive', label: 'Who it is for', placeholder: 'The person this is actually about\u2026',
-      instructions: 'Name the specific person this character\u2019s pursuit is really about, and what they want from that person that they have not asked for. Two sentences, under 40 words. It may be someone dead, absent, or unaware. Avoid making it about a group or an abstraction.' },
-    { id: 'ce_fx_tried', slot: 'drive', label: 'What they have tried', placeholder: 'The approach that already failed\u2026',
-      instructions: 'State what this character already tried in pursuit of what they want, how it failed, and why they still believe. Two or three sentences, under 50 words. The failure must be specific and recent enough to still sting.' },
-
+    { id: 'ce_fx_forwhom', slot: 'drive', label: 'Who it is for', placeholder: 'The person this is actually about…',
+      instructions: 'Name the specific person this character’s pursuit is really about, and what they want from that person that they have not asked for. Two sentences, under 40 words. It may be someone dead, absent, or unaware. Avoid making it about a group, an abstraction, or humanity in general.' },
+    { id: 'ce_fx_tried', slot: 'drive', label: 'What they have tried', placeholder: 'The approach that already failed…',
+      instructions: 'State what this character already tried in pursuit of what they want, how it failed, and why they still believe. Two or three sentences, under 50 words. The failure must be specific, mundane, and recent enough to still sting.' },
     // [v2.95.0 STUDIO-2] The redesign asks the Pursuit slot a question the library could
     // not answer: what the failure actually costs. 'What they have tried' covers the past
     // attempt, nothing covered the consequence. Without it Pursuit states an aim with no
     // stated downside, and a model has no reason to treat losing it as expensive.
-    { id: 'ce_fx_stake', slot: 'drive', label: 'What is at stake', placeholder: 'What happens if they fail this week\u2026',
-      instructions: 'State the concrete consequence if this character fails at what they are currently pursuing. One or two sentences, under 40 words. It must be a specific loss to THIS character, not a general disaster \u2014 what they personally forfeit, and to whom. Avoid the world ending.' },
+    { id: 'ce_fx_stake', slot: 'drive', label: 'What is at stake', placeholder: 'What happens if they fail this week…',
+      instructions: 'State the concrete consequence if this character fails at what they are currently pursuing. One or two sentences, under 40 words. It must be a specific loss to THIS character, not a general disaster — what they personally forfeit, and to whom. Avoid the world ending or vague statements about losing themselves.' },
 
     // ── Position ──
     // [v2.95.0 STUDIO-2] Facets that deepen char.position (v2.92.0). These are ordinary
@@ -10247,13 +10264,12 @@ const BUILTIN_FACETS: { id: string; slot: string; label: string; placeholder: st
     // position.shape and position.standing are the two fields the pressure tier grades, and
     // adding more prose to that record would mean more surface for the tier to be read
     // against without any of it being classified. These sit alongside it as context instead.
-    { id: 'ce_fx_pos_history', slot: 'position', label: 'How it started', placeholder: 'The first thing that happened between them\u2026',
-      instructions: 'State the specific event or circumstance that began this relationship, from this character\u2019s side. Two sentences, under 45 words. A concrete occasion rather than a summary of a period.' },
-    { id: 'ce_fx_pos_unsaid', slot: 'position', label: 'Never said out loud', placeholder: 'The thing they will not say to them\u2026',
-      instructions: 'State the one thing this character will not say to the other person, and what they say instead. Two sentences, under 40 words. It should be sayable in principle \u2014 withheld by choice, not by circumstance.' },
-    { id: 'ce_fx_pos_want', slot: 'position', label: 'What they want from them', placeholder: 'What they are really after\u2026',
+    { id: 'ce_fx_pos_history', slot: 'position', label: 'How it started', placeholder: 'The first thing that happened between them…',
+      instructions: 'State the specific event or circumstance that began this relationship, from this character’s side. Two sentences, under 45 words. A concrete occasion rather than a summary of a period. Avoid fateful encounters or immediate soul-bonds.' },
+    { id: 'ce_fx_pos_unsaid', slot: 'position', label: 'Never said out loud', placeholder: 'The thing they will not say to them…',
+      instructions: 'State the one thing this character will not say to the other person, and what they say instead. Two sentences, under 40 words. It should be sayable in principle — withheld by choice, not by circumstance.' },
+    { id: 'ce_fx_pos_want', slot: 'position', label: 'What they want from them', placeholder: 'What they are really after…',
       instructions: 'State what this character actually wants from the other person, which may not be what they ask for. One or two sentences, under 35 words. Name the want plainly rather than describing the feeling around it.' },
-
     // [v2.104.0 FACET-TIES] Two gaps the Studio's Position step could not fill. Position
     // itself is ONE other character (char.position is a single record, deliberately — see
     // the v2.92.0 CharPosition note), so a character's group allegiance and their other
@@ -10264,52 +10280,97 @@ const BUILTIN_FACETS: { id: string; slot: string; label: string; placeholder: st
     // `slot` is presentational grouping only. They are ordinary customFieldValues: NOT
     // part of the CharPosition record, NOT gated on both-parties-scene-present, and not
     // graded by any pressure tier — they inject like every other facet.
-    { id: 'ce_fx_faction', slot: 'position', label: 'Faction & allegiance', placeholder: 'Who they answer to, and how willingly\u2026',
-      instructions: 'Name the group this character belongs to or answers to \u2014 house, crew, guild, unit, family, employer \u2014 their standing inside it, and how willingly they carry it. Two sentences, under 45 words. If they belong to nothing, say what that costs them rather than leaving it blank. Avoid secret societies and shadowy organisations nobody in the story has met.' },
-    { id: 'ce_fx_relations', slot: 'position', label: 'Other relationships', placeholder: 'The two or three other people who matter\u2026',
-      instructions: 'Name the two or three other people who currently matter to this character and state each tie in a few words \u2014 who they are and what is between them. Under 50 words total. Named individuals with a live connection, not categories and not everyone they have ever met. Do not restate the primary relationship already recorded above.' },
+    { id: 'ce_fx_faction', slot: 'position', label: 'Faction & allegiance', placeholder: 'Who they answer to, and how willingly…',
+      instructions: 'Name the group this character belongs to or answers to — house, crew, guild, unit, family, employer — their standing inside it, and how willingly they carry it. Two sentences, under 45 words. If they belong to nothing, say what that costs them rather than leaving it blank. Avoid secret societies and shadowy organisations nobody in the story has met.' },
+    { id: 'ce_fx_relations', slot: 'position', label: 'Other relationships', placeholder: 'The two or three other people who matter…',
+      instructions: 'Name the two or three other people who currently matter to this character and state each tie in a few words — who they are and what is between them. Under 50 words total. Named individuals with a live connection, not categories and not everyone they have ever met. Do not restate the primary relationship already recorded above.' },
 
     // ── Resistance ──
-    { id: 'ce_fx_secret', slot: 'resistance', label: 'Secret', placeholder: 'Something true they have not told\u2026',
-      instructions: 'State something true about this character that they have not told anyone, and name who would be hurt or lost if it surfaced. Two sentences, under 45 words. It must be currently dangerous rather than merely private. Avoid secret parentage, hidden powers, and concealed identities.' },
-    { id: 'ce_fx_vice', slot: 'resistance', label: 'Vice', placeholder: 'The habit that costs them\u2026',
+    { id: 'ce_fx_secret', slot: 'resistance', label: 'Secret', placeholder: 'Something true they have not told…',
+      instructions: 'State something true about this character that they have not told anyone, and name who would be hurt or lost if it surfaced. Two sentences, under 45 words. It must be currently dangerous rather than merely private. Avoid secret parentage, hidden powers, and concealed heroic identities.' },
+    { id: 'ce_fx_vice', slot: 'resistance', label: 'Vice', placeholder: 'The habit that costs them…',
       instructions: 'Name the habit that costs this character something, and give the justification they actually use for it in their own head. Two sentences, under 40 words. Do not moralise or hint they will overcome it. Avoid drink and gambling as unmotivated stock answers.' },
-    { id: 'ce_fx_debt', slot: 'resistance', label: 'Debt', placeholder: 'What they owe and to whom\u2026',
-      instructions: 'State what this character owes and to whom — money, a favour, blood, or guilt — and what the holder can demand because of it. Two sentences, under 45 words. Name the creditor specifically. Avoid vague debts to organisations nobody has met.' },
-    { id: 'ce_fx_grudge', slot: 'resistance', label: 'Grudge', placeholder: 'Who wronged them, and what is unfinished\u2026',
-      instructions: 'Name who wronged this character, what was done, and the specific unfinished thing that remains. Two sentences, under 45 words. The wrong should be proportionate to an ordinary life unless the profile says otherwise. Avoid murdered families.' },
-    { id: 'ce_fx_superstition', slot: 'resistance', label: 'Superstition', placeholder: 'A belief that is not true, acted on anyway\u2026',
+    { id: 'ce_fx_debt', slot: 'resistance', label: 'Debt', placeholder: 'What they owe and to whom…',
+      instructions: 'State what this character owes and to whom — money, a favour, blood, or guilt — and what the holder can demand because of it. Two sentences, under 45 words. Name the creditor specifically. Avoid vague debts to organisations nobody has met or life debts for saving their life.' },
+    { id: 'ce_fx_grudge', slot: 'resistance', label: 'Grudge', placeholder: 'Who wronged them, and what is unfinished…',
+      instructions: 'Name who wronged this character, what was done, and the specific unfinished thing that remains. Two sentences, under 45 words. The wrong should be proportionate to an ordinary life unless the profile says otherwise. Avoid murdered families and burning villages.' },
+    { id: 'ce_fx_superstition', slot: 'resistance', label: 'Superstition', placeholder: 'A belief that is not true, acted on anyway…',
       instructions: 'State a belief this character holds that is not true, and the specific thing they do because of it. Two sentences, under 35 words. It should be small, habitual, and slightly embarrassing rather than a grand delusion.' },
-    { id: 'ce_fx_blindspot', slot: 'resistance', label: 'Blind spot', placeholder: 'What everyone else can see\u2026',
+    { id: 'ce_fx_blindspot', slot: 'resistance', label: 'Blind spot', placeholder: 'What everyone else can see…',
       instructions: 'State the thing about this character that everyone around them can see and they cannot. Two sentences, under 40 words. Write it as others would describe it, not as a diagnosis. Avoid stating that they are afraid of intimacy or cannot trust people.' },
 
     // ── Conduct ──
-    { id: 'ce_fx_tell', slot: 'conduct', label: 'Tell', placeholder: 'What they do when uncomfortable\u2026',
-      instructions: 'Name the small physical thing this character does when lying or uncomfortable, and who has noticed it. Two sentences, under 30 words. It must be specific and small. Avoid eye contact avoidance, jaw clenching, throat clearing, and touching the neck.' },
-    { id: 'ce_fx_pressure', slot: 'conduct', label: 'Under pressure', placeholder: 'Their default move when things go badly\u2026',
-      instructions: 'State what this character does by default when things go badly: fight, fix, flee, freeze, charm, or delegate. Name one and describe what it looks like in practice. Two sentences, under 40 words. Do not hedge across several.' },
-    { id: 'ce_fx_strangers', slot: 'conduct', label: 'With strangers', placeholder: 'Someone they have no stake in\u2026',
-      instructions: 'Describe how this character treats someone they have no stake in and will never see again. Two sentences, under 40 words. This is the most revealing thing about most people, so be specific rather than pleasant.' },
-    { id: 'ce_fx_subordinates', slot: 'conduct', label: 'With subordinates', placeholder: 'Someone who cannot refuse them\u2026',
+    { id: 'ce_fx_tell', slot: 'conduct', label: 'Tell', placeholder: 'What they do when uncomfortable…',
+      instructions: 'Name the small physical thing this character does when lying or uncomfortable, and who has noticed it. Two sentences, under 30 words. It must be specific and small. Avoid eye contact avoidance, jaw clenching, throat clearing, sighing heavily, biting the lip, and touching the neck.' },
+    { id: 'ce_fx_pressure', slot: 'conduct', label: 'Under pressure', placeholder: 'Their default move when things go badly…',
+      instructions: 'State what this character does by default when things go badly: fight, fix, flee, freeze, charm, or delegate. Name one and describe what it looks like in practice. Two sentences, under 40 words. Do not hedge across several. Avoid "unleashing their true power."' },
+    { id: 'ce_fx_strangers', slot: 'conduct', label: 'With strangers', placeholder: 'Someone they have no stake in…',
+      instructions: 'Describe how this character treats someone they have no stake in and will never see again. Two sentences, under 40 words. This is the most revealing thing about most people, so be specific rather than perfectly pleasant or pointlessly cruel.' },
+    { id: 'ce_fx_subordinates', slot: 'conduct', label: 'With subordinates', placeholder: 'Someone who cannot refuse them…',
       instructions: 'Describe how this character treats someone who cannot refuse them — an employee, a servant, a junior, anyone dependent. Two sentences, under 40 words. Be honest rather than flattering; a decent person and a cruel one differ most here.' },
-    { id: 'ce_fx_authority', slot: 'conduct', label: 'With authority', placeholder: 'Someone who outranks them\u2026',
+    { id: 'ce_fx_authority', slot: 'conduct', label: 'With authority', placeholder: 'Someone who outranks them…',
       instructions: 'Describe how this character behaves toward someone who outranks them and knows it. Two sentences, under 40 words. State whether they comply, needle, flatter, or stonewall, and what it costs them to do it.' },
-    { id: 'ce_fx_humour', slot: 'conduct', label: 'Humour', placeholder: 'What they find funny\u2026',
-      instructions: 'State what this character actually finds funny and whether they let it show. Two sentences, under 35 words. Give one example of the kind of thing that would make them laugh. Avoid dry wit and sarcasm as unearned defaults.' },
-    { id: 'ce_fx_anger', slot: 'conduct', label: 'Anger', placeholder: 'Loud, cold, quiet, or precise\u2026',
-      instructions: 'Describe specifically what this character\u2019s anger looks like from outside, and what they do with it. Two sentences, under 40 words. Choose one register — loud, cold, quiet, precise, or displaced — and commit. Avoid seeing red and clenched fists.' },
-    { id: 'ce_fx_speech', slot: 'conduct', label: 'Speech sample', placeholder: 'Three lines of their actual dialogue\u2026',
-      instructions: 'Write exactly three lines of this character\u2019s dialogue, each from a different situation: one relaxed, one under pressure, one when they want something. No attribution, no narration, no quotation marks, one line each. Make the rhythm and vocabulary distinctive enough that the lines would be recognisable without a name attached.' },
+    { id: 'ce_fx_humour', slot: 'conduct', label: 'Humour', placeholder: 'What they find funny…',
+      instructions: 'State what this character actually finds funny and whether they let it show. Two sentences, under 35 words. Give one example of the kind of thing that would make them laugh. Avoid dry wit, sarcasm as unearned defaults, and "dark amusement at danger."' },
+    { id: 'ce_fx_anger', slot: 'conduct', label: 'Anger', placeholder: 'Loud, cold, quiet, or precise…',
+      instructions: 'Describe specifically what this character’s anger looks like from outside, and what they do with it. Two sentences, under 40 words. Choose one register — loud, cold, quiet, precise, or displaced — and commit. Avoid seeing red, clenched fists, flashing eyes, and gritting teeth.' },
+    { id: 'ce_fx_speech', slot: 'conduct', label: 'Speech sample', placeholder: 'Three lines of their actual dialogue…',
+      instructions: 'Write exactly three lines of this character’s dialogue, each from a different situation: one relaxed, one under pressure, one when they want something. No attribution, no narration, no quotation marks, one line each. Make the rhythm and vocabulary distinctive enough that the lines would be recognisable without a name attached. Do not start lines with crutch words like "Ah," "Well," or "...".' },
 
     // ── History ──
-    { id: 'ce_fx_formative', slot: 'history', label: 'Formative event', placeholder: 'What shaped how they operate\u2026',
-      instructions: 'Describe the event that most shaped how this character operates now, and name the specific habit it left. Two or three sentences, past tense, under 50 words. Ordinary events shape people more than catastrophes; avoid war, fire, and the death of a parent unless the profile establishes them.' },
-    { id: 'ce_fx_origin', slot: 'history', label: 'Where they are from', placeholder: 'Place, class, and what it left\u2026',
+    { id: 'ce_fx_formative', slot: 'history', label: 'Formative event', placeholder: 'What shaped how they operate…',
+      instructions: 'Describe the event that most shaped how this character operates now, and name the specific habit it left. Two or three sentences, past tense, under 50 words. Ordinary events shape people more than catastrophes; avoid war, fire, mysterious mentors, and the death of a parent unless the profile establishes them.' },
+    { id: 'ce_fx_origin', slot: 'history', label: 'Where they are from', placeholder: 'Place, class, and what it left…',
       instructions: 'State where this character is from, what class or station that meant, and one thing it left in how they speak or behave. Two sentences, under 45 words. Keep it consistent with the established world rather than importing a real-world region.' },
-    { id: 'ce_fx_skill', slot: 'history', label: 'Skill & training', placeholder: 'What they are good at, and how they learned\u2026',
-      instructions: 'State what this character is genuinely good at and how they learned it, including one thing they are notably bad at. Two or three sentences, under 50 words. Competence should match their life; avoid unexplained mastery.' },
-    { id: 'ce_fx_reputation', slot: 'history', label: 'Reputation', placeholder: 'What people say when they are not there\u2026',
-      instructions: 'State what people say about this character when they are not in the room, and how accurate it is. Two sentences, under 40 words. Give the actual phrasing others would use.' }
+    { id: 'ce_fx_skill', slot: 'history', label: 'Skill & training', placeholder: 'What they are good at, and how they learned…',
+      instructions: 'State what this character is genuinely good at and how they learned it, including one thing they are notably bad at. Two or three sentences, under 50 words. Competence should match their life; avoid unexplained mastery or ancient forgotten arts.' },
+    { id: 'ce_fx_reputation', slot: 'history', label: 'Reputation', placeholder: 'What people say when they are not there…',
+      instructions: 'State what people say about this character when they are not in the room, and how accurate it is. Two sentences, under 40 words. Give the actual phrasing others would use. Avoid making them universally feared or universally loved.' },
+
+    // ── Pattern Additions ──
+
+    // Collateral: For villains, anti-heroes, and ruthless pragmatists. The cost is external.
+    { id: 'ce_slot_resist_collateral', slot: 'resistance', kind: 'slot', label: 'Resistance · Collateral', placeholder: 'The harm they cause, and the lie that justifies it…',
+      instructions: 'Name the specific harm pursuing the Core inflicts on the people around them, and the lie they tell themselves to justify it. Under 40 words. The harm must be undeniable to everyone but them, and they must fully believe the justification. Avoid "for the greater good" as a generic excuse.' },
+    { id: 'ce_slot_conduct_collateral', slot: 'conduct', kind: 'slot', label: 'Conduct · Collateral', placeholder: 'How they step over people, and how they handle the fallout…',
+      instructions: 'Describe how they step over someone to get what they want, and how they react when forced to look at the damage. Two sentences, under 50 words. Do not let them feel genuine, productive guilt; show how they deflect, rationalize, or compensate instead.' },
+
+    // Obligation: For characters bound by duty, oaths, debts, or literal chains.
+    { id: 'ce_slot_resist_obligation', slot: 'resistance', kind: 'slot', label: 'Resistance · Obligation', placeholder: 'The chain that binds them, and their hidden rebellion…',
+      instructions: 'Name the external force, person, or vow that chains them to the Core, and the one small, private rebellion they keep for themselves. Under 40 words. The chain must be a hard constraint they cannot currently break. Avoid generic "loyalty"; make it a concrete mechanism of control.' },
+    { id: 'ce_slot_conduct_obligation', slot: 'conduct', kind: 'slot', label: 'Conduct · Obligation', placeholder: 'How they obey, and how they drag their feet…',
+      instructions: 'Describe how they execute the duties they are forced into, and the subtle way they drag their feet, work to rule, or sabotage it. Two sentences, under 50 words. Both observable. Avoid outright defiance; the sabotage must be deniable.' },
+    // ── After Dark additions [v3.0.1] ──
+    // Facets that describe the body, the mind and the bedroom. They are ORDINARY
+    // facets — same shape, same generator, same storage, freely addable from the
+    // picker and self-suppressing while empty — filed under the slot each one
+    // deepens rather than under a group of their own, so a character who never adds
+    // one sees no trace of them anywhere.
+
+    // ── Add to: Presence ──
+
+    { id: 'ce_fx_occupational', slot: 'presence', label: 'Occupational mark', placeholder: 'How their life has shaped their body…',
+      instructions: 'Describe how this character’s profession, lifestyle, or past has permanently shaped their physical body. Think a dancer’s legs, a scribe’s ink-stained calluses, or a rider’s bowlegged walk. Two sentences, under 40 words. Avoid generic descriptions of being muscular or fit; focus on the specific, asymmetrical toll of their daily life.' },
+
+    { id: 'ce_fx_allure', slot: 'presence', label: 'Physical draw', placeholder: 'What specifically draws the eye…',
+      instructions: 'Name the specific physical trait or mannerism that draws sexual or romantic attention to this character. One sentence, under 30 words. Focus on a grounded, observable detail rather than a magical aura. Avoid "perfect proportions," "smoldering eyes," and descriptions that sound like clinical anatomical summaries.' },
+
+    // ── Add to: Resistance (Internal conflicts and boundaries) ──
+
+    { id: 'ce_fx_taboo', slot: 'resistance', label: 'Taboo', placeholder: 'The line they will not cross in bed…',
+      instructions: 'State the one intimate, sexual, or romantic line this character will absolutely not cross, or the specific desire they hold but are deeply ashamed of. Two sentences, under 40 words. Make it specific to their psychology and history rather than a universal moral law. Avoid illegal non-consent.' },
+
+    // ── Add to: Conduct (Behavior in action) ──
+
+    { id: 'ce_fx_cognition', slot: 'conduct', label: 'Cognition', placeholder: 'How their mind processes problems…',
+      instructions: 'Describe how this character’s mind works when solving a problem or processing new information. Do they leap to intuitive conclusions, build slow logical chains, or rely on paranoid suspicion? Two sentences, under 40 words. Avoid stating they are simply "a genius," "highly intelligent," or "always ten steps ahead."' },
+
+    { id: 'ce_fx_intimacy', slot: 'conduct', label: 'Intimacy', placeholder: 'How they behave when the armor comes off…',
+      instructions: 'Describe how this character behaves behind closed doors in sexual or romantic situations. Do they need to dominate, do they become surprisingly tender, or are they clumsy and eager? Two sentences, under 45 words. Focus on rhythm, power dynamics, and vulnerability. Avoid explicit anatomical terminology and purple prose; describe the psychological and physical dynamic.' },
+
+    { id: 'ce_fx_appetite_erotic', slot: 'conduct', label: 'Erotic appetite', placeholder: 'What they crave physically…',
+      instructions: 'State what this character is distinctly drawn to in sexual encounters—a specific physical dynamic, a role, a kink, or a type of partner—and how openly they pursue it. Two sentences, under 45 words. Ground it tightly in their Core psychology. Avoid exaggerated anime tropes and purely biological descriptions.' },
+
 ];
 
 // [v2.105.0 FIELD-GROUPING] Facets were rendering in a block at the BOTTOM of every
@@ -12736,7 +12797,11 @@ async function generateSlotOptions(
     // safe; the reverse would not be, which is why the handler never resolves 'auto' itself.
     const _soAuto     = opts?.method === 'auto';
     const _soRun      = _soAuto ? await _ceYoinkRunGet() : 0;
-    const _soYoink    = opts?.method === 'yoink' || (_soAuto && _soRun < AE_YOINK_RUN_MAX);
+    // [v3.0.1 YOINK-UNCAP] AE_YOINK_RUN_MAX <= 0 means "do not gate on the counter";
+    // auto then always tries the free path first and lets an empty response, not an
+    // arithmetic guess, decide that the run is over.
+    const _soYoink    = opts?.method === 'yoink' ||
+        (_soAuto && (AE_YOINK_RUN_MAX <= 0 || _soRun < AE_YOINK_RUN_MAX));
     const wantCount   = _soYoink ? 1 : Math.max(1, Math.min(5, count || 3));
     const targetWords = Math.max(20, Math.floor(maxTokens * 0.75));
     const temp        = (opts && typeof opts.temperature === 'number') ? opts.temperature : 0.95;
@@ -12938,8 +13003,16 @@ async function buildCharacterStateContext(char: CharacterRecord): Promise<string
 
 // ── Generators ────────────────────────────────────────────────────────────────
 
-// [v2.83.0 EPHEMERAL-REWIRE] The six CE_PATTERNS ids, hardcoded here to match both
-// BUILTIN_FACETS (engine) and CE_PATTERNS (bridge) exactly.
+// [v2.83.0 EPHEMERAL-REWIRE] The pattern ids, hardcoded here to match BUILTIN_FACETS'
+// ce_slot_resist_<id> / ce_slot_conduct_<id> pairs exactly.
+//
+// [v3.0.1 PATTERN-8] Six became eight: 'collateral' and 'obligation'. FOUR PLACES MOVE
+// TOGETHER OR THE PATTERN IS HALF-REAL -- this list, CE_PATTERN_ORDER, CE_PATTERN_DEFS,
+// and the matching ce_slot_resist_<id>/ce_slot_conduct_<id> pair in BUILTIN_FACETS.
+// Miss the DEFS entry and the picker renders a blank card; miss the BUILTIN_FACETS pair
+// and the card is pickable but its two slots never appear, which reads to the author as
+// a pattern that silently does nothing. The bridge no longer mirrors any of this (the
+// Studio that needed a copy is deleted) -- do not re-mirror it there.
 //
 // [v2.98.0 PATTERN-STORED, SUPERSEDES the note this replaces] Through v2.97.0 there was
 // no stored "which pattern" field -- identity was purely implicit in which
@@ -12949,7 +13022,7 @@ async function buildCharacterStateContext(char: CharacterRecord): Promise<string
 // the fallback for any record saved before this version. Nothing here still assumes there
 // is no stored field -- if you are reading old comments elsewhere that say otherwise, this
 // note is the correction.
-const CE_PATTERN_IDS: string[] = ['contradiction', 'wantneed', 'defense', 'ruleset', 'appetite', 'mask'];
+const CE_PATTERN_IDS: string[] = ['contradiction', 'wantneed', 'defense', 'ruleset', 'appetite', 'mask', 'collateral', 'obligation'];
 
 // [v2.109.0 PATTERN-DEFS] The pattern display table, ported from the bridge's CE_PATTERNS
 // (bridge SECTION 18) and now ENGINE-AUTHORITATIVE. It was bridge-only because the Studio
@@ -12963,7 +13036,7 @@ const CE_PATTERN_IDS: string[] = ['contradiction', 'wantneed', 'defense', 'rules
 //
 // `c` is a fixed literal hue, like CE_SEM. AURA ONLY -- junction dot, gated-group rail,
 // card edge. It must never be applied to body text, on either artifact.
-const CE_PATTERN_ORDER: string[] = ['contradiction', 'wantneed', 'defense', 'ruleset', 'appetite', 'mask'];
+const CE_PATTERN_ORDER: string[] = ['contradiction', 'wantneed', 'defense', 'ruleset', 'appetite', 'mask', 'collateral', 'obligation'];
 const CE_PATTERN_DEFS: { [k: string]: any } = {
     contradiction: { c: '#5fc0a0', sub: 'Contradiction',
         name: 'They\u2019re one thing, and also the opposite',
@@ -12994,7 +13067,25 @@ const CE_PATTERN_DEFS: { [k: string]: any } = {
         name: 'The role isn\u2019t the person',
         blurb: 'A part they play that forbids something',
         resist: 'What does the role forbid them from wanting?',
-        conduct: 'How do they perform it, and when does the person slip through?' }
+        conduct: 'How do they perform it, and when does the person slip through?' },
+
+    // [v3.0.1 PATTERN-8] Two patterns the first six could not carry. Every one of the
+    // original six locates the cost INSIDE the character -- a competing truth, a
+    // substitute, a sore spot, a code, a hunger, a role. That is the right model for a
+    // protagonist and the wrong one for the two shapes authors kept trying to force into
+    // it: the character whose pursuit costs OTHER people (collateral), and the character
+    // who does not get to choose at all (obligation). Both were being filed under
+    // 'ruleset' or 'wantneed' and generating slot text that argued against itself.
+    collateral: { c: '#c2563f', sub: 'Collateral',
+        name: 'They break what is in the way',
+        blurb: 'Damage they will not call damage',
+        resist: 'Who pays for this, and what do they tell themselves?',
+        conduct: 'How do they step over someone, and what happens when they have to look?' },
+    obligation: { c: '#6d76b5', sub: 'Obligation',
+        name: 'They do not get to choose',
+        blurb: 'A chain they cannot break, and one private rebellion',
+        resist: 'What binds them to it, and what have they kept for themselves?',
+        conduct: 'How do they carry out the duty, and where do they drag their feet?' }
 };
 
 // Stored value wins when it is one of the two known shapes; otherwise scan. A record with
@@ -14409,7 +14500,7 @@ async function executeAutoSnap(): Promise<void> {
         if (!rawPrompt) throw new Error('GLM returned an empty prompt.');
 
         const compiled = compileActiveImageFields();
-        await broadcastToTM(EVT_GENERATE_IMAGE, {
+        await ceBroadcastImageGen({
             uuid:             api.v1.uuid(),
             prompt:           rawPrompt,
             characters:       matchedChars.map(function(c) { return { name: c.name, visuals: c.visuals, uc: c.uc }; }),
@@ -14572,6 +14663,37 @@ function ceStudioToggleEquip(idx: number): void {
     }).catch(function(e: any) { api.v1.error('[AE:jsxstudio] equip append failed:', e); });
 }
 
+// [v3.0.2 IMG-STORYID, per user: "images no longer land in gallery"] EVERY
+// EVT_GENERATE_IMAGE GOES THROUGH HERE. It exists for one reason: to stamp the story id
+// ENGINE-SIDE, at send time, on every image the bridge is about to store.
+//
+// ROOT CAUSE OF THE REPORT. dbSave stamps each gallery record with the bridge's
+// `activeStoryId`, which is a COPY of a value this engine sent it -- and the engine sends
+// it in exactly two places, both of them handshake paths (EVT_HANDSHAKE and the legacy
+// EVT_CHAR_SYNC_PUSH). Nothing re-sends it when the story changes. So a bridge that was
+// loaded under story A and is now sitting in story B stamps B's images with A's id, or
+// with '' if no handshake has landed at all. The gallery then asks api.v1.story.id()
+// DIRECTLY (ceGalleryReceive already refuses to trust the bridge's copy, and its own
+// comment says why) and filters on equality -- so every image is stored, and none of them
+// match. Which is precisely the report: nothing in the gallery, and avatars unaffected,
+// because portraits are keyed by character and never story-scoped.
+//
+// The fix is to stop having two copies rather than to refresh the second one faster. The
+// engine knows the story id at the moment it asks for an image; that is the only moment
+// that can possibly be right, since the answer is about THIS image.
+//
+// FAILS OPEN, NOT CLOSED: a story id that cannot be read sends '' and the bridge falls
+// back to activeStoryId, i.e. exactly today's behaviour. A read failure must never be able
+// to stop an image being generated.
+async function ceBroadcastImageGen(payload: any): Promise<void> {
+    var sid = '';
+    try { sid = String(await api.v1.story.id() || ''); } catch (e) { sid = ''; }
+    var out: any = {};
+    for (var k in payload) { out[k] = payload[k]; }
+    out.storyId = sid;
+    await broadcastToTM(EVT_GENERATE_IMAGE, out);
+}
+
 async function submitDirectorPhoto(
     prompt: string,
     uc: string,
@@ -14621,7 +14743,7 @@ async function submitDirectorPhoto(
     }).filter(function(c) { return c.name.trim() || c.visuals.trim() || c.uc.trim(); });
 
     const sdpUuid = api.v1.uuid();
-    await broadcastToTM(EVT_GENERATE_IMAGE, {
+    await ceBroadcastImageGen({
         uuid:             sdpUuid,
         prompt:           rawPrompt,
         characters:       cappedChars,
@@ -14674,7 +14796,7 @@ async function assembleSnapshotImage(charId: string): Promise<void> {
         let charVisuals = found.length ? found[0].visuals : '';
         let charUC = found.length ? found[0].uc : '';
         let compiled = compileActiveImageFields();
-        await broadcastToTM(EVT_GENERATE_IMAGE, {
+        await ceBroadcastImageGen({
             uuid:             api.v1.uuid(),
             prompt:           basePrompt,
             characters:       charVisuals ? [{ name: aChar.name, visuals: charVisuals, uc: charUC }] : [],
@@ -16798,14 +16920,27 @@ async function handleBridgeMessage(msg: any): Promise<void> {
                     // showing when the toggle was flipped.
                     // [v2.94.0 SLOT-YOINK-AUTO] 'auto' is passed straight through and
                     // resolved inside generateSlotOptions against the live run counter.
-                    // gsoCount is sized for the PESSIMISTIC case (auto counts as direct)
-                    // so the pre-flight never green-lights a request that a resolve-to-
-                    // direct would then be too poor to afford. Over-reserving is a refused
-                    // click; under-reserving is a truncated generation that looks like a
-                    // model failure, and those are not equally bad.
+                    // [v3.0.1 YOINK-UNCAP] AUTO IS NOW SIZED AT 1, NOT AT THE DIRECT COUNT.
+                    // The old pessimistic sizing was correct while AE_YOINK_RUN_MAX could
+                    // send auto down the 3-candidate direct branch. With the counter cap
+                    // off, auto ALWAYS resolves to wantCount 1 -- either the yoink itself or
+                    // the 1-candidate metered fallback an empty yoink falls through to (see
+                    // generateSlotOptions, which computes max_tokens from that same
+                    // wantCount). So this is not under-reserving; it is reserving the amount
+                    // the call actually asks for. Reserving three times that was refusing
+                    // clicks on 'not enough budget' for a request costing a third of the
+                    // quoted figure, or nothing at all.
+                    //
+                    // IF THE CAP IS EVER RE-ARMED (AE_YOINK_RUN_MAX > 0), THIS MUST GO BACK
+                    // TO THE PESSIMISTIC FORM -- auto could then resolve to direct again and
+                    // a 1-sized reservation would let through a call that truncates.
                     const gsoMethod: 'direct' | 'yoink' | 'auto' =
                         (payload.method === 'yoink') ? 'yoink' : (payload.method === 'auto' ? 'auto' : 'direct');
-                    const gsoCount = (gsoMethod === 'yoink') ? 1 : Math.max(2, Math.min(5, Number(payload.count) || 3));
+                    const gsoCount = (gsoMethod === 'direct')
+                        ? Math.max(2, Math.min(5, Number(payload.count) || 3))
+                        : ((gsoMethod === 'auto' && AE_YOINK_RUN_MAX > 0)
+                            ? Math.max(2, Math.min(5, Number(payload.count) || 3))
+                            : 1);
 
                     // [v2.74.0 GEN-BUDGET] Pre-flight. generateSlotOptions asks for
                     // (budget + 30) * count + 40 output tokens; if the allowance cannot cover
@@ -17266,6 +17401,29 @@ async function handleBridgeMessage(msg: any): Promise<void> {
             case 'AE_IMG_EDIT_OPEN': {
                 try { await ceImgEditOpen(String((payload && payload.uuid) || '')); }
                 catch (eIeO) { api.v1.error('[AE:imgedit] open failed:', eIeO); }
+                break;
+            }
+
+            // [v3.0.1 IMG-UPLOAD] The bridge finished writing an uploaded image to a slot.
+            // IT IS NOT ENOUGH THAT THE BRIDGE REPAINTS ITS OWN ANCHORS. _ceSurfImgSweep
+            // refreshes an anchor that is ALREADY ON SCREEN; whether a card draws an
+            // anchor at all is an engine decision, made from cePublishImgSlots' `has`
+            // projection and from ceEntityStore. A slot that was empty when the surface
+            // rendered has no anchor to sweep, so without this the first upload into an
+            // empty slot lands in storage and shows nothing until the author navigates
+            // away and back.
+            //
+            // Republished UNCONDITIONALLY rather than routed by which surface is open:
+            // both publishes are cheap projections, the id may be a character or an
+            // entity and this message does not say which, and guessing wrong is a blank
+            // frame over a file that exists. Both are no-ops when the id is not theirs.
+            case 'AE_CHAR_IMAGE_UPLOADED': {
+                var upId = String((payload && payload.charId) || '');
+                if (upId) {
+                    try { await cePublishImgSlots(upId); } catch (eUp1) {}
+                    try { await cePublishEntity(upId); } catch (eUp2) {}
+                    try { await cePublishScene(); } catch (eUp3) {}
+                }
                 break;
             }
 
@@ -19819,7 +19977,8 @@ api.v1.hooks.register('onScriptsLoaded', async function() {
 // pressed ground, SS3 12%), CE_RING (the focus ring; SS9.1 writes it as "<hue>", but see
 // its own note for why chrome must not borrow a character's identity hue).
 //
-// PRIMITIVES ADDED: ceGroup, ceRow, ceChip, ceMeter, ceCard, ceIconBtn, ceIcon, ceBusy.
+// PRIMITIVES ADDED: ceGroup, ceRow, ceChip, ceMeter, ceCard, ceIconBtn, ceIcon.
+// (ceBusy was in this list; deleted v3.0.4 GEN-RAIL-OUT.)
 // ceGroup/ceRow/ceChip/ceMeter/ceCard/ceIcon HAVE ZERO CALL SITES ON PURPOSE — they are
 // what the Phase D re-skin sweep migrates INTO, exactly the status ceField shipped with in
 // v2.108.0. DO NOT DELETE THEM IN A DEAD-CODE SWEEP; they are forward dependencies.
@@ -19840,24 +19999,8 @@ api.v1.hooks.register('onScriptsLoaded', async function() {
 //     per-call-site argument, defaulting to `label + ellipsis`. Mechanical -ing conversion
 //     produces garbage on most of the 113 real labels in this file.
 //
-// GENERATION RAIL (SS10): ceGenStore + a self-rescheduling setTimeout ticker, hung on
-// aeDiagGenerate — the sole api.v1.generate() call site — in the same try/finally shape as
-// _diagProbeActive so it clears on the error path too. Cancellation is FLAG-CHECKED via
-// _ceGenTickGen, never clearTimeout-raced: api.v1.timers.setTimeout returns a
-// Promise<number>, so the id always arrives after the callback is scheduled.
-// ceBusy IS THE ONLY PERMITTED SUBSCRIBER TO ceGenStore (SS10.2) — a surface subscribing
-// repaints several times a second for the whole generation.
-// [v2.140.0, per user] GAP CLOSED: executeYoinkGeneration is now wired to the same rail.
-// Per the user, yoink and direct are used TOGETHER by design (three yoink runs available
-// between direct calls, to widen the effective budget) -- not an edge path, a large share
-// of real usage. Traced the full lifecycle before wiring rather than guessing: exactly one
-// begin (executeYoinkGenerationAttempt, right before api.v1.editor.generate()) and three
-// possible ends (the onGenerationEnd success path, the immediate-reject path inside the
-// same function, and ygAttemptWithWatchdog's timeout force-recovery) -- but the wiring
-// itself sits ONE LEVEL UP, at executeYoinkGeneration, the single real entry point (18
-// call sites) that already wraps error-retry and corrective-retry in one try/finally
-// alongside the model-pin restore. Wiring at the attempt level would flicker the rail
-// between retries of one logical call; wiring here shows one continuous segment.
+// GENERATION RAIL: REMOVED in v3.0.4 (GEN-RAIL-OUT). The bridge's fixed-position pill
+// replaced it -- see the note where ceGenBegin/ceGenEnd used to be declared.
 //
 // NEW STORAGE KEY: 'ce_reduce_motion' on api.v1.storage (ACCOUNT-global, not story). It is
 // a property of the reader, not the story file. ceMotionApply MUTATES CE_T's duration
@@ -19932,7 +20075,7 @@ var CE_T = {
 };
 // The opacity ladder (SS4). THREE VALUES. A fourth anywhere in SECTIONS 28-35 is a bug --
 // see CE-STYLE v2.0 SS12 check 2. Kept as a real object (not just documented literals)
-// so ceGenBusy/ceMeter/future primitives can reference it directly; existing call sites
+// so ceMeter/future primitives can reference it directly; existing call sites
 // still write the literal ('0.74'/'0.58') per the audit's own grep pattern, and that is
 // unchanged and intentional, not a second, competing convention.
 var CE_OP = { t1: '1', t2: '0.74', t3: '0.58' };
@@ -20328,76 +20471,23 @@ async function ceAction(opId: string, fn: () => Promise<void>): Promise<void> {
 // SS10.1 asks for three scopes. TWO OF THEM ALREADY EXIST: control scope is ceBtn's busy
 // state (rebuilt this patch to keep the label rather than saying "Working..."), and
 // surface scope is each surface's own placeholder. THIS IS THE THIRD, SHELL SCOPE, and
-// SS10.1 calls it the one that matters most, for a reason worth restating: a generation
-// OUTLIVES the surface it was started on. Tap Enhance on a Profile, navigate to Scene, and
-// every other indicator is gone -- the button unmounted, the section unmounted. The rail
-// is the only thing that survives navigation, because it lives above the router.
+// [v3.0.4 GEN-RAIL-OUT] THE SHELL-SCOPE GENERATION RAIL WAS HERE AND IS DELETED.
+// ceGenStore, _ceGenTick, ceGenBegin, ceGenEnd and ceBusy all went together.
 //
-// IT HAS ITS OWN STORE, and that is a hard requirement rather than tidiness (SS10.2):
-// "The ticker owns its own store, and only ceBusy subscribes to it. If a surface
-// subscribes, the whole surface repaints several times a second while a generation runs.
-// This is the difference between an indicator and a performance bug." Do not merge this
-// into ceUiStore -- every surface subscribes to that one.
-var ceGenStore: any = null;
-var _ceGenLive = 0;          // metered calls currently in flight
-var _ceGenTickGen = 0;       // bumped to invalidate an in-flight ticker chain
-var _ceGenPhase = 0;
-
-function ceGenStoreInit(): void {
-    if (ceGenStore) return;
-    try { ceGenStore = createStore({ live: 0, phase: 0 }); }
-    catch (e) { api.v1.error('[AE:jsxkit] gen store init failed:', e); }
-}
-
-// THE TICKER (SS10.2). No @keyframes, no SMIL, no setInterval, no requestAnimationFrame --
-// none of them exist here -- so indeterminate motion is a SELF-RESCHEDULING setTimeout
-// chain flipping a value that a CSS transition then glides between.
+// Its own header argued it was the indicator that mattered most because a generation
+// outlives the surface that started it. That was true, and the rail still failed at it:
+// living above the ROUTER is not living above the SHELL, so it died on shell close, and
+// being inside the Preact tree meant HOST-ORPHAN (v2.169.0) could leave it painting on an
+// abandoned render root -- a bar stuck under the menu tab with no generation behind it,
+// which is what the user reported during Auto-Snap.
 //
-// CANCELLATION IS FLAG-CHECKED, NEVER clearTimeout-RACED. This is the sharp edge:
-// api.v1.timers.setTimeout returns a Promise<number> (verified in script-types_d.txt --
-// `function setTimeout(callback: () => void, delay: number): Promise<number>`), so the
-// timer id arrives AFTER the callback has already been scheduled. A canceller holding that
-// id can always lose the race. Instead every tick re-reads _ceGenTickGen at the top and
-// returns if it has moved, which cannot lose a race because it is a plain read of a value
-// the canceller has already written.
-async function _ceGenTick(myGen: number): Promise<void> {
-    if (myGen !== _ceGenTickGen) return;          // superseded -- this chain is dead
-    if (_ceGenLive <= 0) return;                  // SS10.2: stops when nothing is in flight
-    _ceGenPhase = (_ceGenPhase + 1) % 4;
-    try { if (ceGenStore) ceGenStore.set({ live: _ceGenLive, phase: _ceGenPhase }); } catch (e) {}
-    try {
-        await api.v1.timers.setTimeout(function() { _ceGenTick(myGen).catch(function() {}); }, 240);
-    } catch (e) { /* a failed reschedule ends the chain; the rail falls back to static */ }
-}
-
-// Called by aeDiagGenerate ONLY -- see its own body for why there is exactly one wiring
-// point. Both are fire-and-forget and neither may ever throw into the generation it is
-// attached to: an indicator failing to appear must not be able to take down the call it
-// was meant to indicate.
-function ceGenBegin(): void {
-    try {
-        ceGenStoreInit();
-        _ceGenLive++;
-        if (ceGenStore) ceGenStore.set({ live: _ceGenLive, phase: _ceGenPhase });
-        if (_ceGenLive === 1) {
-            // First metered call starts the chain. REDUCED MOTION SKIPS THE TICKER
-            // ENTIRELY rather than ticking at 0ms -- a 0ms transition would make the bar
-            // teleport between phases four times a second, which is worse than the motion
-            // it replaces. The rail still renders, as a static bar; see _ceGenRail.
-            if (!CE_REDUCE_MOTION) {
-                _ceGenTickGen++;
-                _ceGenTick(_ceGenTickGen).catch(function() {});
-            }
-        }
-    } catch (e) { /* never throws into a generation */ }
-}
-function ceGenEnd(): void {
-    try {
-        if (_ceGenLive > 0) _ceGenLive--;
-        if (_ceGenLive === 0) _ceGenTickGen++;    // invalidate the chain; no clearTimeout
-        if (ceGenStore) ceGenStore.set({ live: _ceGenLive, phase: _ceGenPhase });
-    } catch (e) { /* never throws into a generation */ }
-}
+// The bridge generation pill (bridge v3.0.3, SECTION 7b) is fixed-position, outside the
+// shell, survives both navigation AND close, and can be dismissed if its count ever leaks.
+// It is a strict superset, so keeping both would be two copies of one fact.
+//
+// SS10.2's RULE SURVIVES ITS EXAMPLE: if anything here ever needs indeterminate motion
+// again, it owns its own store and no surface subscribes to it -- that is the difference
+// between an indicator and a performance bug, and it was not what was wrong with this one.
 
 // -- The physical-tap guard --------------------------------------------------
 // [v2.110.0 TAP-GUARD] ceAction is an IN-FLIGHT latch, not a duplicate-tap
@@ -20439,6 +20529,66 @@ function ceGenEnd(): void {
 var CE_TAP_MS = 120;
 var _ceTapAt = 0;
 var _ceTapLastOp = '';
+
+// [v3.0.2 TAP-FLIP, per user report + a second author's independent finding: "JSX tends to
+// send duplicate click events on touch devices"] A SECOND, LONGER, PER-OP GUARD -- OPT-IN,
+// LAYERED ON TOP OF THE GLOBAL ONE, NEVER A REPLACEMENT FOR IT.
+//
+// The global guard's own header explains why it cannot be keyed on opId: the back button's
+// two fires carry DIFFERENT opIds, so a per-op guard misses that case entirely. That
+// argument is correct and unchanged. But it is an argument for why per-op cannot be the
+// ONLY guard, not for why it cannot exist alongside one.
+//
+// What 120ms misses: a touch device that synthesises a click from a touch sequence can
+// deliver the pair far further apart than the ~10ms machine-speed gap the sibling onInput
+// probe measured. Raising CE_TAP_MS itself is not the fix -- the pressure steppers depend
+// on being able to fire faster than a deliberate double-tap, and a global 400ms window
+// would make holding +/- unusable.
+//
+// So the longer window is opt-in and applies ONLY to controls where a second fire inside
+// it is never something a person meant: a scope toggle, a tab switch, a nav. USE ceTap FOR
+// ANYTHING REPEATABLE -- steppers, counters, "add another" -- or you will drop taps the
+// author intended. Everything ceTapOnce guards must also be safe under the global guard,
+// which still runs first and still stamps the shared clock.
+//
+// WHY A FLIP NEEDS THIS AND IDEMPOTENCE IS NOT ENOUGH: the gallery scope toggle already
+// captures its target at render time (CEGAL-IDEMP) so a fast duplicate is harmless. That
+// only covers the fast case. A duplicate that lands AFTER Preact has re-rendered gets a
+// FRESH closure holding the already-flipped value, computes the opposite target, and
+// flips it back -- which is the reported "switches back almost immediately". No amount of
+// care inside the handler can fix that, because the second handler is a legitimately
+// correct handler for a state that legitimately changed. It has to not run.
+var CE_TAP_FLIP_MS = 450;
+var _ceTapFlipAt: { [k: string]: number } = {};
+
+// THE CHECK, SPLIT OUT FROM THE WRAPPER, because the two are needed in different places.
+// A raw onClick can take the wrapper (ceTapOnce). A ceBtn handler CANNOT -- ceBtn already
+// routes through ceTap, so wrapping its callback would NEST ceTap inside ceTap, which the
+// global guard's own header names as the one thing never to do (the outer accept stamps
+// the clock, the inner sees dt~0 and drops the real work). Such a handler calls this
+// predicate directly instead: a separate clock the global guard never touches, so there is
+// no nesting and nothing to get wrong.
+//
+// Returns true to PROCEED. Stamps on every call that is not itself a drop, including calls
+// the global guard will go on to reject -- a rejected fire is still a physical event for
+// this op, and the next one inside the window is still the duplicate.
+function _ceFlipGuard(opId: string): boolean {
+    var now = Date.now();
+    var prev = Number(_ceTapFlipAt[opId] || 0);
+    if (prev && (now - prev) >= 0 && (now - prev) < CE_TAP_FLIP_MS) {
+        aeLog('[AE:tapguard] FLIP-DROP ' + opId + ' ' + (now - prev) + 'ms after itself');
+        return false;
+    }
+    _ceTapFlipAt[opId] = now;
+    return true;
+}
+
+// For a RAW onClick only. Anything already inside a ceBtn/ceIconBtn/ceListRow callback
+// must use _ceFlipGuard instead -- see above.
+function ceTapOnce(opId: string, fn: () => void): void {
+    if (!_ceFlipGuard(opId)) return;
+    ceTap(opId, fn);
+}
 
 function ceTap(opId: string, fn: () => void): void {
     var now = Date.now();
@@ -21223,6 +21373,16 @@ function ceIconDownload(): any {
         h('path', { key: 'd3', d: 'M12 15V3' })
     ]);
 }
+// [v3.0.1 IMG-UPLOAD] Download's mirror: same tray, arrow reversed. Deliberately NOT a
+// plus or a paperclip -- an author reading the row should be able to tell at a glance that
+// these two are the same verb in opposite directions, and only a mirrored glyph says that.
+function ceIconUpload(): any {
+    return ceIcon([
+        h('path', { key: 'u1', d: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4' }),
+        h('path', { key: 'u2', d: 'M7 8l5-5 5 5' }),
+        h('path', { key: 'u3', d: 'M12 3v12' })
+    ]);
+}
 // [v2.144.0 PHASE-G] The scene roster's two verbs. Same stroke contract as the other
 // three; declared here for the same reason they were.
 function ceIconUserPlus(): any {
@@ -21512,56 +21672,7 @@ function ceListRow(opts: any): any {
     );
 }
 
-// ceBusy -- the shell-scope generation rail (CE-STYLE v2.0 SS10.1 #3, SS8).
-// THE ONLY SUBSCRIBER TO ceGenStore, by contract (SS10.2). If a second component ever
-// subscribes, read that rule again before doing it.
-//
-// 2px across the top of the shell, in CE_SEM.building. Present whenever ANY metered call
-// is in flight and absent otherwise -- it renders null rather than a transparent 2px
-// strip, because unlike ceDot's 'calm' there is no row here whose reflow matters, and a
-// permanent empty strip at the top of every surface is chrome that means nothing.
-//
-// aria-live="polite" per SS11: the rail's appearance is ANNOUNCED, not merely visual --
-// which is the whole point for a user who cannot see that they are being metered.
-// The hue is never dimmed (SS6.2/SS4: "Semantic and pattern colours never take an
-// opacity"); the track it runs on is CE_LINE, a color-mix, keeping the two vocabularies
-// separate exactly as SS4 requires.
-function ceBusy(): any {
-    ceGenStoreInit();
-    var g = useStoreValue(ceGenStore);
-    var live = (g && g.live) || 0;
-    if (live <= 0) return null;
-    var phase = (g && g.phase) || 0;
-    // Indeterminate motion without keyframes: the segment's own `left` is transitioned
-    // between four resting places, so the browser interpolates the travel for us. Under
-    // reduced motion the ticker never runs (see ceGenBegin), phase stays put, and the
-    // segment renders full-width and static -- still unmistakably "something is running".
-    var lefts = ['0%', '30%', '60%', '30%'];
-    var seg = CE_REDUCE_MOTION
-        ? { left: '0%', width: '100%' }
-        : { left: lefts[phase % 4], width: '40%' };
-    return h('div', {
-        role: 'status', 'aria-live': 'polite',
-        'aria-label': live > 1 ? (live + ' generations running') : 'Generating',
-        style: {
-            position: 'relative', height: '2px', width: '100%', flex: '0 0 auto',
-            background: CE_LINE, overflow: 'hidden'
-        }
-    },
-        h('div', { style: {
-            position: 'absolute', top: '0', height: '100%',
-            left: seg.left, width: seg.width,
-            background: CE_SEM.building,
-            transition: 'left ' + CE_T.mSlow + ' ' + CE_T.ease
-        } }),
-        // SS10.1: "The rail also carries a count when more than one call is live
-        // (ceMono, right-aligned)." Only when it is actually ambiguous -- a count of 1
-        // beside a running bar is noise.
-        live > 1 ? h('div', { style: {
-            position: 'absolute', right: CE_T.s1, top: '0', lineHeight: '2px'
-        } }, ceMono(String(live), { opacity: CE_OP.t3 })) : null
-    );
-}
+// [v3.0.4 GEN-RAIL-OUT] ceBusy was here. See the note where ceGenBegin/ceGenEnd were.
 
 function ceEmpty(msg: string, action: any): any {
     return h('div', { style: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: CE_T.s2, padding: CE_T.s4, opacity: '0.74', fontSize: CE_T.fsSm, textAlign: 'center' } },
@@ -21989,6 +22100,46 @@ var CE_PICKER_DEFS: { [k: string]: any } = {
         }
     },
 
+    // [v3.0.1 PROFILE-DOORS] NOT A REFERENCE FIELD -- the only entry in this table whose
+    // value is an ORDINAL rather than the id of something the world knows about. It is
+    // here anyway because the picker surface is the shape, not the semantics: a list of
+    // mutually exclusive options, one current, commit-on-tap, no staged state. The
+    // alternative was openDynamicRankPicker's UIPart modal opened from a jsx surface,
+    // which JSXPROFILE-NO-OVERLAY forbids.
+    //
+    // ASSIGNMENT SWAPS, IT DOES NOT DISPLACE -- assignDynamicPriorityRank hands the
+    // previous holder this character's old rank rather than unranking them. The `sub`
+    // line names the holder for exactly that reason: the tap has a second consequence and
+    // the author should be able to see whose before making it.
+    dynamicRank: {
+        title: 'Dynamic priority',
+        hint: 'Under a dynamic cap, lower rank is processed first. One character per rank \u2014 taking a held rank swaps the two.',
+        clearLabel: 'Unranked',
+        options: function(ctx: any, src: any): any[] {
+            var dr: any = (src && src.profile && src.profile.dynRank) || { rank: 0, max: 0, holders: {} };
+            var self: string = String((src && src.profile && src.profile.p && src.profile.p.name) || '');
+            var out: any[] = [];
+            var max = Number(dr.max) || 0;
+            for (var r = 1; r <= max; r++) {
+                var holder = String((dr.holders || {})[String(r)] || '');
+                out.push({ id: String(r), label: 'Rank ' + r,
+                           sub: (holder && holder !== self) ? 'Held by ' + holder : '' });
+            }
+            return out;
+        },
+        current: function(ctx: any, src: any): string {
+            var dr: any = (src && src.profile && src.profile.dynRank) || null;
+            var r = Number(dr && dr.rank) || 0;
+            return r > 0 ? String(r) : '';
+        },
+        commit: function(ctx: any, id: string, label: string): Promise<any> {
+            var cid = String(ctx.charId || '');
+            var want = parseInt(String(id || ''), 10);
+            return Promise.resolve(assignDynamicPriorityRank(cid, (isFinite(want) && want > 0) ? want : undefined))
+                .then(function() { return cePublishProfile(cid); });
+        }
+    },
+
     // [v2.146.0 HOOK-TARGETID] Now a FULL reference, id and all — UnresolvedHook gained
     // targetId in the same patch. `current` reads the id directly instead of the v2.145.0
     // label match, so a target whose name was later edited elsewhere still reads as chosen.
@@ -22212,12 +22363,25 @@ function cePhotoClose(): void {
 // forced wantCount to 1 no matter what the author asked for.
 var _ceSlotOptsHint = '';   // CLICK-BEFORE-BLUR: draft steer text is a module var, never store state
 
+// [v3.0.3 ENTGEN] `scope` is 'char' (default, every pre-existing call site) or 'entity'.
+// It selects WHICH RECORD IS READ for context and WHICH RECORD IS WRITTEN on commit --
+// nothing else. Deliberately a field on this record rather than a second parallel store:
+// only one generator is open at a time by design ("One open at a time, keyed by (charId,
+// fieldKey)" -- ceUiStore's own note), and two stores would mean two ways for two to be
+// open at once.
+//
+// `useStory` is the recent-story-context toggle, and it applies to CHARACTERS TOO. It has
+// always been a parameter of generateSlotOptions and this path has always hardcoded it
+// false, so the capability existed with no control -- the same shape as a capability
+// without a door, one layer down.
 function ceSlotOptsOpen(charId: string, fieldKey: string, label: string,
-                        instructions: string, budget: number): void {
+                        instructions: string, budget: number, scope?: string): void {
     _ceSlotOptsHint = '';
     ceUiPatch(function() {
         return { slotOpts: {
             charId: String(charId || ''), fieldKey: String(fieldKey || ''),
+            scope: (String(scope || 'char') === 'entity') ? 'entity' : 'char',
+            useStory: false,
             label: String(label || fieldKey || 'Field'),
             instructions: String(instructions || ''), budget: Number(budget) || 150,
             // [v2.161.0 GEN-INLINE] method DEFAULTS TO 'direct', not 'auto'. See
@@ -22264,8 +22428,29 @@ async function ceSlotOptsRun(): Promise<void> {
     if (!st || !st.charId) return;
     ceSlotOptsPatch({ status: 'running', note: '', options: [] });
     try {
-        var c: any = await loadCharacter(st.charId);
-        if (!c) { ceSlotOptsPatch({ status: 'error', note: 'Character not found.' }); return; }
+        // [v3.0.3 ENTGEN] The entity path builds a SHIM in the shape generateSlotOptions
+        // reads, rather than getting a generator of its own. That function only ever
+        // touches four things on the record it is handed -- name, briefDescription,
+        // conceptDump, and buildFieldGenContext(record, label) -- so a shim carrying those
+        // four reuses the entire generator: prompt construction, the one-vs-many fork, the
+        // separator parse, the busy-retry loop, the yoink/direct branch and the candidate
+        // cards. A parallel generateEntityOptions would have been a second copy of all of
+        // it, drifting from the first the moment either was tuned.
+        //
+        // buildFieldGenContext is fed an EMPTY customFieldValues and no static fields, so
+        // it returns effectively nothing and the entity's own material arrives through
+        // conceptDump instead -- which is exactly what that field is for, and which the
+        // prompt already describes to the model as "reference notes (extract only what is
+        // directly relevant)". An entity has no six-slot model to summarise, so there is
+        // no structured context to lose here.
+        var c: any = (String(st.scope || 'char') === 'entity')
+            ? await _ceEntityGenShim(String(st.charId), String(st.fieldKey))
+            : await loadCharacter(st.charId);
+        if (!c) {
+            ceSlotOptsPatch({ status: 'error',
+                note: (String(st.scope || 'char') === 'entity') ? 'That entity is gone.' : 'Character not found.' });
+            return;
+        }
         var cfg: any = await loadConfig();
         // [v2.161.0 GEN-INLINE] METHOD IS THE AUTHOR'S, NOT 'auto'. Passing 'auto' let
         // generateSlotOptions resolve to a single-candidate yoink draw whenever free runs
@@ -22280,7 +22465,7 @@ async function ceSlotOptsRun(): Promise<void> {
             c, String(st.label || ''), String(st.instructions || ''),
             (cfg && cfg.generalStyle) || '', _ceSlotOptsHint || '',
             Number(st.budget) || 150, Number(st.count) || 3, '',
-            { includeStory: false, method: soMethod }
+            { includeStory: !!st.useStory, method: soMethod }
         );
         if (!out || !out.length) {
             ceSlotOptsPatch({ status: 'error', note: 'Came back empty \u2014 try again, or lower the count.' });
@@ -22303,8 +22488,120 @@ async function ceSlotOptsCommit(text: string): Promise<void> {
     var st: any = null;
     try { var u: any = ceUiStore ? ceUiStore.get() : null; st = (u && u.slotOpts) || null; } catch (e) { st = null; }
     if (!st || !st.charId || !st.fieldKey) return;
+    if (String(st.scope || 'char') === 'entity') {
+        // ceEntityWrite, not ceProfileWrite: different storage, different chain
+        // (ceEntityOp), and different publish. The republish is ceEntityWrite's own job,
+        // so there is nothing extra to do here.
+        await ceEntityWrite(String(st.charId), String(st.fieldKey), String(text || ''));
+        ceSlotOptsClose();
+        return;
+    }
     await ceProfileWrite(st.charId, String(st.fieldKey), String(text || ''));
     ceSlotOptsClose();
+}
+
+// [v3.0.3 ENTGEN] The four things generateSlotOptions reads, assembled from an entity.
+// `excludeField` is the field being written: its current text is kept OUT of the notes, or
+// a regenerate would be handed its own previous answer as reference and converge on it.
+async function _ceEntityGenShim(id: string, excludeField: string): Promise<any> {
+    var ent: any = null;
+    try { ent = await loadEntity(id); } catch (e) { ent = null; }
+    if (!ent) return null;
+
+    var kindWord = String(ent.type || 'location');
+    var where = '';
+    try {
+        if (ent.parentId) {
+            var par: any = await loadEntity(String(ent.parentId));
+            if (par && par.name) where = String(par.name);
+        }
+    } catch (eP) { where = ''; }
+
+    var notes: string[] = [];
+    function add(label: string, v: any): void {
+        var s = String(v || '').trim();
+        if (!s) return;
+        notes.push(label + ': ' + (s.length > 600 ? s.slice(0, 600) + '\u2026' : s));
+    }
+    if (excludeField !== 'description')   add('Description', ent.description);
+    if (excludeField !== 'lorebookText')  add('Lorebook entry', ent.lorebookText);
+    add('Visual tags', ent.locationVisuals);
+    add('Atmosphere', ent.atmosphere);
+    if (where) add('Located inside', where);
+    var keys: string[] = ent.lorebookTags || [];
+    if (keys.length) add('Trigger keys', keys.join(', '));
+
+    return {
+        id: String(ent.id || id),
+        name: String(ent.name || 'Unnamed'),
+        briefDescription: 'A ' + kindWord + (where ? (' in ' + where) : '') + '.',
+        conceptDump: notes.join('\n'),
+        // Present and EMPTY on purpose. buildFieldGenContext walks both; absent values
+        // would throw there, and non-empty ones would inject a character's structure onto
+        // something that has none.
+        customFieldValues: {},
+        nicknames: [],
+        hooks: []
+    };
+}
+
+// [v3.0.3 ENTGEN] BROAD ON PURPOSE, per user: "locations can be so many things and people
+// could have such different expectations... items can literally be anything." A tight
+// instruction is right for a character slot, where the question is genuinely the same
+// every time; it is wrong here, where a location may be a room, a city, a ship or a state
+// of mind. So each of these names the JOB and the LENGTH, refuses the two or three
+// failure modes that are universal, and otherwise leans on the author's steer -- which is
+// the field directly above the Generate button and the thing that actually knows.
+//
+// The four entries are not symmetric, because the two record fields do not do the same
+// work for the two kinds:
+//   LOCATION description  -- currently injects NOWHERE. It is an author's working note and
+//                            a seed for the lorebook entry, and is written as such rather
+//                            than pretending to be prose the model will read.
+//   LOCATION lorebookText -- the one that actually reaches the story, on a key match.
+//   ITEM description      -- THE HIGH-VALUE ONE. This is the text that folds into a
+//                            character's own lorebook entry while the item is equipped, so
+//                            it is read in the second person of that character's entry and
+//                            must be short, present-tense and free of standalone framing.
+//   ITEM lorebookText     -- the item's own entry, for when it is talked about rather than
+//                            carried.
+// Keyed '<type>:<field>'. A type with no entry simply renders no Generate button, which is
+// the honest default for a kind nobody has written a prompt for yet.
+var CE_ENTITY_GEN_DEFS: { [k: string]: any } = {
+    'location:description': {
+        label: 'Description', budget: 160,
+        guide: 'A working note for you, and the seed the lorebook entry is written from. It does not reach the story on its own.',
+        instructions: 'Describe this place as someone standing in it would take it in: what is seen, heard and smelled, and what people are doing there. Two to four sentences, under 90 words. Concrete and specific to THIS place rather than to its category \u2014 a detail that would be wrong for any other tavern, any other throne room. Follow the author\u2019s steer above closely; it outranks any assumption about genre or scale. Avoid opening with \u201cnestled\u201d or \u201csteeped in,\u201d avoid claiming a history nobody has established, and do not describe the player arriving.'
+    },
+    'location:lorebookText': {
+        label: 'Lorebook entry', budget: 220,
+        guide: 'This is what reaches the story when the name or a key appears. Facts, not atmosphere.',
+        instructions: 'Write the lorebook entry for this place: what a narrator needs to KNOW about it that is not already obvious from the description. Who controls it, what happens there, what the rules are, what it is known for, who to expect. Three to five sentences, under 130 words. Standing facts in present tense, not a scene and not a story. Follow the author\u2019s steer above closely; it outranks any assumption about genre or scale. Avoid restating the physical description, avoid inventing a named ruler or faction unless the steer or notes give you one, and avoid prophecy, ancient evil and anything the story has not earned.'
+    },
+    'item:description': {
+        label: 'Description', budget: 110,
+        guide: 'Folded into the carrier\u2019s own lorebook entry while equipped \u2014 so it is read as part of THEIR entry, not as its own.',
+        instructions: 'Describe this item as it appears while someone is carrying or wearing it. One to three sentences, under 60 words. Present tense, physical and immediate: what it looks like, how it sits on them, what it does when used. THIS TEXT IS FOLDED INTO THE CARRIER\u2019S LOREBOOK ENTRY, so do not name the item as a heading, do not open with \u201cThis is a\u2026\u201d, and do not refer to a specific owner by name. Follow the author\u2019s steer above closely; it outranks any assumption about genre or power level. Avoid glowing runes, unspecified ancient power, and stating a rarity tier.'
+    },
+    'item:lorebookText': {
+        label: 'Lorebook entry', budget: 180,
+        guide: 'The item\u2019s own entry \u2014 injected when it is talked about, whether or not anyone is holding it.',
+        instructions: 'Write the lorebook entry for this item: where it came from, who wants it, what it costs to use, what is known and what is rumoured. Two to four sentences, under 110 words. Standing facts in present tense. Follow the author\u2019s steer above closely; it outranks any assumption about genre or power level. Avoid restating the physical description, avoid inventing a named maker or civilisation unless the steer or notes give you one, and avoid making it the key to anything.'
+    }
+};
+
+function _ceEntityGenDef(type: string, field: string): any {
+    return CE_ENTITY_GEN_DEFS[String(type || '') + ':' + String(field || '')] || null;
+}
+
+// The call-site wrapper. Returns null when no prompt is defined for this (type, field),
+// so a narrative or character entity simply shows no button rather than an inert one.
+function _ceEntGenBtn(id: string, ent: any, field: string): any {
+    var def: any = _ceEntityGenDef(String(ent && ent.type || ''), field);
+    if (!def) return null;
+    return _ceGenBtn(null, id, field, String(def.label || field),
+                     String(def.instructions || ''), Number(def.budget) || 150,
+                     String(def.guide || ''), 'entity');
 }
 
 // THE CALL-SITE HALF, and the reason SS12 check 5 becomes auditable rather than a
@@ -22875,7 +23172,7 @@ function ceRoot(): any {
     // live inside anything this switch can replace. It is `flex: 0 0 auto` and renders
     // null when idle, so it costs no layout at rest.
     return h('div', { style: { display: 'flex', flexDirection: 'column', height: '100%', minHeight: '0' } },
-        h(ceBusy, null),
+        // [v3.0.4 GEN-RAIL-OUT] The generation rail was the first child here.
         ceShellNav(surface),
         h('div', { key: routeKey, style: { flex: '1 1 auto', minHeight: '0' } }, body)
     );
@@ -22898,7 +23195,6 @@ function ceRoot(): any {
 //     subscriptions; nothing here ever calls handle.update().
 async function ceOpenShell(surface: string, entityId?: string): Promise<void> {
     ceStoresInit();
-    ceGenStoreInit();          // [v2.139.0 STYLE2 GEN-RAIL] the rail's own store (SS10.2)
     ceProfileStoreInit();
     ceJournalStoreInit();
     ceImgSlotStoreInit();
@@ -23009,6 +23305,13 @@ function ceProfileStoreInit(): void {
     // It is a PROJECTION for the same reason roster and vocabSpecies are, and for one
     // more that is specific to it: char.entityId is not on buildCharProfilePayload and
     // must not be added there, because that payload is the BRIDGE's too.
+    // [v3.0.1 PROFILE-DOORS] `dynRank` is the dynamic-priority projection:
+    //   { rank, max, holders: { <rank>: <name> } }
+    // rank 0 means unranked. It exists because CE_PICKER_DEFS.options() is SYNCHRONOUS by
+    // contract and the answer needs the whole cast's ranks plus cfg.maxDynamicCharacters --
+    // neither of which is on buildCharProfilePayload, and neither of which may be fetched
+    // from a render path. Computed off the loadAllCharacters() pass cePublishProfile
+    // already runs for roster/vocabSpecies, so it costs no extra storage read.
     // [v2.151.0 PHASE-COND] `conds` is the PER-CHARACTER half of the conditions system:
     //   { active: [{defId, stageIndex}], lines: [string], injects: bool }
     // The DEFINITIONS half already lives on cfg.conditions (Settings > World, built
@@ -23016,7 +23319,8 @@ function ceProfileStoreInit(): void {
     try { ceProfileStore = createStore({ ready: false, charId: '', p: null, tiers: null, cfg: null,
                                          roster: [], vocabSpecies: [],
                                          equip: { entityId: '', bodyOk: false, carried: [], candidates: [] },
-                                         conds: { active: [], lines: [], injects: true } }); }
+                                         conds: { active: [], lines: [], injects: true },
+                                         dynRank: { rank: 0, max: 0, holders: {} } }); }
     catch (e) { api.v1.error('[AE:jsxprofile] store init failed:', e); }
 }
 
@@ -23094,17 +23398,36 @@ async function cePublishProfile(charId: string): Promise<void> {
         // for keeping whole records out of this store is untouched.
         var vocabSpecies: string[] = [];
         var seenSp: any = {};
+        // [v3.0.1 PROFILE-DOORS] Ranks are harvested in the SAME pass, from the same
+        // records. openDynamicRankPicker read them off loadIndex() instead; the index
+        // mirrors the field (see loadIndex's dynamicPriorityRank propagation) but the full
+        // records are already in hand here, so a second read would only be a second thing
+        // to keep in sync.
+        var dynRank: any = { rank: 0, max: 0, holders: {} };
+        var dynEligible = 0;
         try {
             var all: any[] = await loadAllCharacters();
             for (var ri = 0; ri < (all || []).length; ri++) {
                 if (!all[ri]) continue;
                 var sp = String(all[ri].species || '').trim();
                 if (sp && !seenSp[sp.toLowerCase()]) { seenSp[sp.toLowerCase()] = 1; vocabSpecies.push(sp); }
-                if (all[ri].id === charId) continue;
+                var rkV: any = (all[ri] as any).dynamicPriorityRank;
+                var rk = (typeof rkV === 'number' && rkV > 0) ? rkV : 0;
+                if (rk) { dynRank.holders[String(rk)] = String(all[ri].name || 'Unnamed'); }
+                if (all[ri].active && !all[ri].isProtagonist) { dynEligible++; }
+                if (all[ri].id === charId) { dynRank.rank = rk; continue; }
                 roster.push({ id: all[ri].id, name: all[ri].name || 'Unnamed' });
             }
         } catch (eR) { api.v1.error('[AE:jsxprofile] roster read failed:', eR); }
         vocabSpecies.sort();
+        // How many rank slots to offer -- openDynamicRankPicker's rule, kept verbatim so
+        // the two doors cannot disagree about how many ranks exist: exactly the cap when
+        // one is set, otherwise as many as there are eligible present characters, floored
+        // at 4 so the control still means something in a two-hander.
+        try {
+            var dynCap = Number((cfg as any).maxDynamicCharacters) || 0;
+            dynRank.max = dynCap > 0 ? dynCap : Math.max(4, dynEligible);
+        } catch (eDR) { dynRank.max = 4; }
 
         // [v2.150.0 PHASE-F] THE EQUIPMENT PROJECTION. One loadEntityIndex, one pass, both
         // lists -- what this character carries and what could be moved to them.
@@ -23189,7 +23512,7 @@ async function cePublishProfile(charId: string): Promise<void> {
 
         ceProfileStore.set({ ready: true, charId: charId, p: payload || null, tiers: tiers,
                              cfg: cfg || null, roster: roster, vocabSpecies: vocabSpecies,
-                             equip: equip, conds: conds });
+                             equip: equip, conds: conds, dynRank: dynRank });
     } catch (e) {
         // Previous value survives a failed publish — stale beats blank.
         api.v1.error('[AE:jsxprofile] publish failed:', e);
@@ -23514,7 +23837,7 @@ async function ceImgSlotGenerate(charId: string, slot: string): Promise<void> {
         var chars = charVisuals ? [{ name: c.name, visuals: charVisuals, uc: c.uc || '' }] : [];
         var seed = (c.avatarSeed && c.avatarSeed !== 0) ? c.avatarSeed : Math.floor(Math.random() * 4294967295);
         var compiled = compileActiveImageFields();
-        await broadcastToTM(EVT_GENERATE_IMAGE, {
+        await ceBroadcastImageGen({
             uuid: api.v1.uuid(),
             prompt: '',
             characters: chars,
@@ -23539,6 +23862,13 @@ async function ceImgSlotGenerate(charId: string, slot: string): Promise<void> {
     } catch (e) { api.v1.error('[AE:imgslots] generate failed:', e); }
 }
 
+// [v3.0.1 IMG-UPLOAD] `op` gained 'upload'. IT IS THE ONLY OP ON THIS MESSAGE WITH A
+// RETURN LEG: delete/download/edit either finish bridge-side or fail bridge-side, and the
+// engine has nothing to repaint either way, but an upload puts BYTES IN A SLOT THE ENGINE
+// BELIEVED WAS EMPTY. So the bridge answers with AE_CHAR_IMAGE_UPLOADED { charId, slot }
+// on success only, handled in SECTION 18. Both halves must move together -- the button
+// without the bridge op does nothing, and the bridge op without the inbound case stores
+// the image and never shows it.
 async function ceImgSlotAction(charId: string, slot: string, op: string): Promise<void> {
     if (!isBridgeReady) {
         try { api.v1.ui.toast('Bridge not connected.', { type: 'warning', autoClose: 2000 }); } catch (e0) {}
@@ -23991,8 +24321,11 @@ function _ceGenSpec(cfg: any, f: any): any {
 // first place -- see _ceSlotCard. This row always exists when there is a guide to show:
 // both are gated on the SAME `instructions` string, so the glyph can never be handed to a
 // row that returned null above it.
+// [v3.0.3 ENTGEN] `scope` is passed straight through to ceSlotOptsOpen and is otherwise
+// invisible here -- every control on this strip is identical for a character field and an
+// entity field, which is the point of routing both through one component.
 function _ceGenBtn(p: any, charId: string, writeKey: string, label: string,
-                   instructions: string, budget: number, guide?: string): any {
+                   instructions: string, budget: number, guide?: string, scope?: string): any {
     if (!instructions) return null;
     var st: any = _ceSlotOptsFor(charId, writeKey);
     var chip: any = _ceGuideChip(String(guide || ''), true);
@@ -24000,7 +24333,7 @@ function _ceGenBtn(p: any, charId: string, writeKey: string, label: string,
         return h('div', { style: { display: 'flex', gap: CE_T.s2, flexWrap: 'wrap',
             alignItems: 'center' } },
             ceBtn('Generate', 'genopt:' + charId + ':' + writeKey, function() {
-                ceSlotOptsOpen(charId, writeKey, label, instructions, budget);
+                ceSlotOptsOpen(charId, writeKey, label, instructions, budget, scope);
                 return Promise.resolve();
             }),
             chip
@@ -24053,6 +24386,19 @@ function _ceGenBtn(p: any, charId: string, writeKey: string, label: string,
     })));
     kids.push(h('div', { key: 'g_ctl', style: { display: 'flex', gap: CE_T.s2, flexWrap: 'wrap',
         alignItems: 'flex-end' } }, controls));
+
+    // [v3.0.3 ENTGEN] The story-context toggle. generateSlotOptions has taken includeStory
+    // since it was written and this strip hardcoded it false, so this is a control for a
+    // capability that already worked -- not a new one. It costs INPUT tokens, not output,
+    // which is why it is a plain switch with no budget arithmetic attached: the Tokens
+    // field beside it governs the answer's length and is unaffected either way.
+    kids.push(h('div', { key: 'g_story' },
+        ceSettingRow('Use recent story',
+            'Folds the last stretch of the story in as reference, so the answer fits what has actually happened rather than the record alone.',
+            ceToggle(!!st.useStory, 'slotopt:story:' + writeKey, function() {
+                ceSlotOptsPatch({ useStory: !st.useStory });
+                return Promise.resolve();
+            }))));
 
     kids.push(h('div', { key: 'g_note0', style: { fontSize: CE_T.fsSm, opacity: CE_OP.t3,
         lineHeight: CE_T.lhProse } },
@@ -24453,6 +24799,14 @@ function _ceImgSlotCard(charId: string, slot: string, tag: string, isAvatar: boo
     acts.push(ceBtn('Generate', 'imgslot:gen:' + slot, function() { return ceImgSlotGenerate(charId, slot); }, 'primary'));
     acts.push(ceIconBtn('Edit the ' + slot + ' image', ceIconEdit(), 'imgslot:edit:' + slot,
         function() { return ceImgSlotAction(charId, slot, 'edit'); }));
+    // [v3.0.1 IMG-UPLOAD] Beside Download rather than beside Generate, because it is
+    // Download's opposite and not Generate's alternative. NOT confirm-guarded: an upload
+    // overwrites this slot's stored bytes, but the thing it overwrites is regenerable and
+    // the file dialog is itself a confirmation step -- DESTRUCTIVE-NEVER-IN-PLACE is about
+    // actions that destroy with one unrecoverable tap, and this one cannot complete
+    // without the author picking a specific file first.
+    acts.push(ceIconBtn('Upload an image for ' + slot, ceIconUpload(), 'imgslot:up:' + slot,
+        function() { return ceImgSlotAction(charId, slot, 'upload'); }));
     acts.push(ceIconBtn('Download the ' + slot + ' image', ceIconDownload(), 'imgslot:dl:' + slot,
         function() { return ceImgSlotAction(charId, slot, 'download'); }));
     // [v2.121.0 DESTRUCTIVE-NEVER-IN-PLACE] Same rule the Journal's delete button follows:
@@ -25823,7 +26177,20 @@ function _ceProfileSettings(charId: string, p: any): any {
                 })),
             ceSettingRow('Lorebook entry', '',
                 h('div', { style: { fontSize: CE_T.fsSm, opacity: '0.58' } },
-                    p.hasLoreEntry ? 'Linked' : 'Not linked'))
+                    p.hasLoreEntry ? 'Linked' : 'Not linked')),
+            // [v3.0.1 PROFILE-DOORS] Filed under Behaviour rather than in a group of its
+            // own because that is what it is: which characters the dynamic engine gets to
+            // this turn when it cannot get to all of them. It sits directly under the two
+            // switches that decide WHETHER this character is processed, since this one
+            // decides WHEN.
+            h('div', { style: { paddingTop: CE_T.s3 } },
+                cePickerRow({
+                    label: 'Dynamic priority',
+                    value: _ceDynRankLabel(),
+                    kind: 'dynamicRank', ctx: { charId: charId },
+                    placeholder: 'Unranked',
+                    hint: 'Only matters when the cast is larger than the per-turn dynamic cap. Unranked characters are processed after every ranked one.'
+                }))
         )),
         // [v2.112.0 PERSONA-TO-SETTINGS] The texting persona is a chat SETTING, matching the
         // call the bridge profile tab already made in v2.93.0 PERSONA-MOVE.
@@ -25872,8 +26239,79 @@ function _ceProfileSettings(charId: string, p: any): any {
                 placeholder: 'Anything you know about them, in any order\u2026',
                 onCommit: function(v: string) { return ceProfileWrite(charId, 'conceptDump', v); }
             })
-        ))
+        )),
+        // [v3.0.1 PROFILE-DOORS] LAST ON THE SURFACE AND BEHIND A SECOND TAP. Confirms in
+        // place rather than through confirmDeleteChar's native modal -- same rule and same
+        // shape as ceEntityDelete's block (SECTION 36), which is the reference. The
+        // confirm flag rides the existing `open` map (_ceSetOpen / _ceOpenIs) rather than
+        // adding a store key: it is session UI keyed by target, which is precisely what
+        // that map is.
+        _ceProfileDangerBlock(charId, p)
     );
+}
+
+// [v3.0.1 PROFILE-DOORS] Reads the dynRank projection with NO HOOK, so it stays legal
+// inside _ceProfileSettings' straight-line body -- the same direct-store-read licence
+// _ceOpenIs and _ceGuideOpen already take, and for the same reason.
+function _ceDynRankLabel(): string {
+    try {
+        var s: any = ceProfileStore ? ceProfileStore.get() : null;
+        var r = Number(s && s.dynRank && s.dynRank.rank) || 0;
+        return r > 0 ? ('Rank ' + r) : '';
+    } catch (e) { return ''; }
+}
+
+// Deleting a character is the one irreversible act on this surface, so it gets the
+// treatment the Entity surface settled on: an icon button that ASKS, a sentence naming
+// what else goes with it, and a separate destructive confirm. The sentence is not
+// boilerplate -- deleteCharacter cascades to the entity body and every saved image slot,
+// and an author who has generated portraits should be told that before tapping, not
+// after.
+function _ceProfileDangerBlock(charId: string, p: any): any {
+    var key = 'prof:delask:' + charId;
+    var asking = _ceOpenIs(key);
+    var nm = String((p && p.name) || 'this character');
+    return h('div', { key: 'prof_danger', style: {
+        display: 'flex', gap: CE_T.s2, flexWrap: 'wrap', alignItems: 'center',
+        paddingTop: CE_T.s4, borderTop: '1px solid ' + CE_LINE
+    } },
+        asking
+            ? h('div', { style: { flex: '1 1 160px', fontSize: CE_T.fsSm, opacity: CE_OP.t2, lineHeight: CE_T.lhProse } },
+                'Delete ' + nm + '? Their physical body in the world, their saved images and their lorebook entry go too. This cannot be undone.')
+            : null,
+        asking
+            ? ceBtn('Delete', 'prof:del:' + charId, function() { return _ceProfileDelete(charId); }, 'danger')
+            : ceIconBtn('Delete ' + nm, ceIconTrash(), key, function() {
+                _ceSetOpen(key, true);
+                return Promise.resolve();
+              }, 'danger'),
+        asking
+            ? ceBtn('Keep them', 'prof:delno:' + charId, function() {
+                _ceSetOpen(key, false);
+                return Promise.resolve();
+              })
+            : null
+    );
+}
+
+// Navigates FIRST-CLASS to Scene rather than Back: the return address may well be the
+// profile of the character that no longer exists, and a Back that lands on a deleted
+// record is the bug this avoids rather than handles.
+async function _ceProfileDelete(charId: string): Promise<void> {
+    try {
+        await deleteCharacter(charId);
+        _ceSetOpen('prof:delask:' + charId, false);
+        ceUiPatch(function() { return { profileDrill: '', profileStep: 0 }; });
+        ceNav('scene');
+        try { await cePublishScene(); } catch (eS) {}
+        // The bridge still caches character visuals for image generation, so it is told
+        // on the same path confirmDeleteChar uses. Non-fatal: the record is already gone
+        // and a failed broadcast must not read as a failed delete.
+        try { await broadcastCharacterData(); } catch (eB) {}
+        try { queueSceneStateBroadcast(); } catch (eQ) {}
+    } catch (e) {
+        api.v1.error('[AE:jsxprofile] delete failed:', e);
+    }
 }
 
 // -- The guided build --------------------------------------------------------
@@ -26165,8 +26603,17 @@ function ceProfileRoot(): any {
         rows.push(_ceProfileGroup(charId, p, cfg, { id: 'position', label: 'Position' },
                                   _ceProfilePositionKids(charId, p)));
     }
-    rows.push(_ceProfileHooks(charId, p, cfg));
+    // [v3.0.1 CUSTOM-BEFORE-HOOKS, per user: "move 'Define a custom field' to under last
+    // field before hooks"] CUSTOM FIELDS NOW SIT ABOVE HOOKS, NOT BELOW THEM. Everything
+    // above this line describes WHO THE CHARACTER IS -- the six groups, Position, and any
+    // custom field the author defined, which is just a seventh group they wrote
+    // themselves. Hooks are the odd one out: unresolved tensions the dynamic engine
+    // escalates and spawns, i.e. story state rather than description. Putting the author's
+    // own fields after them read as an appendix to a system feature instead of as the last
+    // of their own material, and the "Define a custom field" door was the furthest thing
+    // on the surface from every other field it belongs beside.
     rows.push(_ceProfileCustomGroup(charId, p, cfg));
+    rows.push(_ceProfileHooks(charId, p, cfg));
     // [v2.163.0 CONDENSED] s5 between sections is CE-STYLE SS7.1's Read-density spacing.
     // The old zero-gap column was correct for a stack of accordion HEADS and wrong the
     // moment every section renders its content.
@@ -26793,6 +27240,256 @@ function ceJournalRoot(): any {
 
 
 // ============================================================================
+// SECTION 31b — VECTOR ICON LIBRARY  [v3.0.6 ICON-LIB]
+// ============================================================================
+// Scalable, theme-following icons for places. An entity's `icon` is still a
+// plain string and STILL ACCEPTS AN EMOJI exactly as before -- this adds a
+// second thing that string may be, distinguished by a prefix, so nothing
+// already stored needs migrating and nothing already stored stops working.
+//
+//   ent.icon = '\ud83c\udff0'       -> emoji, drawn as <text> (unchanged since v2.127.0)
+//   ent.icon = 'svg:keep'   -> a library key, drawn as vector paths
+//
+// ── HOW TO ADD AN ICON ──────────────────────────────────────────────────────
+// Add one entry to CE_ICON_LIB. Nothing else. It appears in the Entity picker
+// and on the map automatically, because both read this table rather than
+// listing keys of their own.
+//
+//   key      the storage value, minus the 'svg:' prefix. Never rename one --
+//            an entity storing 'svg:keep' would silently lose its icon.
+//   name     what the picker calls it. Sentence case, a thing not a category.
+//   group    picker grouping only. 'built' | 'wild' | 'water' | 'mark'.
+//   vb       the source viewBox as [minX, minY, w, h]. Icons authored here use
+//            0 0 24 24; an imported one keeps whatever it arrived with, and
+//            both render identically because the renderers scale from vb.
+//   parts    the drawing, in back-to-front order. Each is { t, d } plus an
+//            optional { tf } transform.
+//
+// ── WHY PARTS CARRY A TIER AND NOT A COLOUR ─────────────────────────────────
+// A found icon is shaded with a palette. Painting the whole thing currentColor
+// so it matches the surface destroys that shading, and for anything built from
+// overlapping panels the result is a featureless silhouette. So a part carries
+// a TONE TIER instead: the renderer draws every part in currentColor and
+// varies only fill-opacity, which keeps the internal shading while letting the
+// icon take the colour of whatever is drawing it.
+//
+// The structure ramp IS the surface's own opacity ladder (SS4: 1 / 0.74 /
+// 0.58), extended by two steps that only deep-shaded imports reach. That is
+// deliberate rather than coincidental -- an icon obeying the ladder is not an
+// exception to SS4 that has to be argued for, it is another thing that follows
+// it. Accents are a SEPARATE, SHALLOWER ramp for the saturated colours a
+// source used to mean something by (a lit window, a flame, a gem): they must
+// not sink into the grey ramp or the meaning goes with them.
+//
+// ── THE IMPORT PATH ─────────────────────────────────────────────────────────
+// Descriptors are produced by the Icon Forge (ce-svg-forge.html), a build-time
+// browser tool that does the stripping, the shape flattening, the merge-by-
+// colour and the tone assignment. It runs in a browser because THIS runtime
+// has no DOM and therefore no DOMParser -- the engine can render SVG but it
+// cannot read it. Paste the tool's output straight into this table.
+// ============================================================================
+
+// The two ramps. Keys are tier ids; the Forge emits the same ones.
+var CE_ICON_OP: { [k: string]: number } = {
+    s0: 1, s1: 0.74, s2: 0.58, s3: 0.40, s4: 0.28,   // structure -- SS4's ladder, extended
+    a0: 1, a1: 0.72, a2: 0.50                        // accents -- saturated source colours
+};
+
+var CE_ICON_PREFIX = 'svg:';
+
+// Authored on a 24x24 grid, geometric rather than illustrative, and legible at
+// the ~14px the map draws them at when zoomed out. Two or three tiers each:
+// enough to read as shaded, few enough to survive being scaled down.
+var CE_ICON_LIB: { [k: string]: any } = {
+
+    // ── Built places ────────────────────────────────────────────────────────
+    keep: { name: 'Keep', group: 'built', vb: [0, 0, 24, 24], parts: [
+        { t: 's2', d: 'M4 21V10h16v11Z' },
+        { t: 's0', d: 'M3 10V6h2v2h2V6h2v2h2V6h2v2h2V6h2v4Z' },
+        { t: 'a0', d: 'M10 21v-5a2 2 0 0 1 4 0v5Z' }
+    ] },
+    tower: { name: 'Tower', group: 'built', vb: [0, 0, 24, 24], parts: [
+        { t: 's2', d: 'M9 21V8h6v13Z' },
+        { t: 's0', d: 'M8 8V5h1.6v1.6h1.6V5h1.6v1.6h1.6V5H16v3Z' },
+        { t: 'a0', d: 'M11 11h2v3h-2Z' }
+    ] },
+    city: { name: 'City', group: 'built', vb: [0, 0, 24, 24], parts: [
+        { t: 's2', d: 'M2 21V11h5v10Z' },
+        { t: 's0', d: 'M8 21V6h6v15Z' },
+        { t: 's1', d: 'M15 21V13h7v8Z' },
+        { t: 'a0', d: 'M10 9h2v2h-2ZM10 13h2v2h-2ZM17 16h2v2h-2Z' }
+    ] },
+    village: { name: 'Village', group: 'built', vb: [0, 0, 24, 24], parts: [
+        { t: 's2', d: 'M2 21v-6l4.5-3.5L11 15v6Z' },
+        { t: 's0', d: 'M12 21v-8l5-4 5 4v8Z' },
+        { t: 'a0', d: 'M15.4 21v-4h3.2v4Z' }
+    ] },
+    temple: { name: 'Temple', group: 'built', vb: [0, 0, 24, 24], parts: [
+        { t: 's0', d: 'M12 3l10 6H2Z' },
+        { t: 's2', d: 'M5 21V10h2.4v11ZM10.8 21V10h2.4v11ZM16.6 21V10H19v11Z' },
+        { t: 's1', d: 'M3 21h18v-1.6H3Z' }
+    ] },
+    gate: { name: 'Gate', group: 'built', vb: [0, 0, 24, 24], parts: [
+        { t: 's2', d: 'M4 21V11a8 8 0 0 1 16 0v10h-3.6v-10a4.4 4.4 0 0 0-8.8 0v10Z' },
+        { t: 's0', d: 'M3 11h18V9.2H3Z' }
+    ] },
+    ruin: { name: 'Ruin', group: 'built', vb: [0, 0, 24, 24], parts: [
+        { t: 's2', d: 'M3 21V10h3v11ZM15 21V8h3v13Z' },
+        { t: 's1', d: 'M9 21v-7h3v7Z' },
+        { t: 's3', d: 'M2 21h20v-1.8H2Z' }
+    ] },
+    camp: { name: 'Camp', group: 'built', vb: [0, 0, 24, 24], parts: [
+        { t: 's2', d: 'M12 3l9.5 18h-19Z' },
+        { t: 's4', d: 'M12 11l4.6 10H7.4Z' }
+    ] },
+
+    // ── Wild places ─────────────────────────────────────────────────────────
+    forest: { name: 'Forest', group: 'wild', vb: [0, 0, 24, 24], parts: [
+        { t: 's0', d: 'M12 2l5 7h-2.6l4 6H5.6l4-6H7Z' },
+        { t: 's2', d: 'M11 15h2v6h-2Z' }
+    ] },
+    mountain: { name: 'Mountain', group: 'wild', vb: [0, 0, 24, 24], parts: [
+        { t: 's2', d: 'M1 21L9 6l5.4 9.6L17.2 11 23 21Z' },
+        { t: 's0', d: 'M14.4 15.6L17.2 11 23 21h-6.2Z' }
+    ] },
+    cave: { name: 'Cave', group: 'wild', vb: [0, 0, 24, 24], parts: [
+        { t: 's2', d: 'M2 21c0-6 4.5-11 10-11s10 5 10 11Z' },
+        { t: 's4', d: 'M8 21c0-3.6 1.8-6.2 4-6.2s4 2.6 4 6.2Z' }
+    ] },
+    plain: { name: 'Open ground', group: 'wild', vb: [0, 0, 24, 24], parts: [
+        { t: 's1', d: 'M2 17c4-2.6 8-2.6 10 0s6 2.6 10 0v3.4c-4 2.6-8 2.6-10 0s-6-2.6-10 0Z' },
+        { t: 's0', d: 'M6 13v-4M10 13V8M14 13v-4.6M18 13V9' }
+    ] },
+
+    // ── Water ───────────────────────────────────────────────────────────────
+    sea: { name: 'Sea', group: 'water', vb: [0, 0, 24, 24], parts: [
+        { t: 's0', d: 'M2 6c2-1.6 4-1.6 6 0s4 1.6 6 0 4-1.6 6 0v2c-2 1.6-4 1.6-6 0s-4-1.6-6 0-4 1.6-6 0Z' },
+        { t: 's1', d: 'M2 12c2-1.6 4-1.6 6 0s4 1.6 6 0 4-1.6 6 0v2c-2 1.6-4 1.6-6 0s-4-1.6-6 0-4 1.6-6 0Z' },
+        { t: 's2', d: 'M2 18c2-1.6 4-1.6 6 0s4 1.6 6 0 4-1.6 6 0v2c-2 1.6-4 1.6-6 0s-4-1.6-6 0-4 1.6-6 0Z' }
+    ] },
+    river: { name: 'River', group: 'water', vb: [0, 0, 24, 24], parts: [
+        { t: 's1', d: 'M7 2c0 5 6 6 6 11s-5 6-5 9h4c0-3 6-4.6 6-9S12 6 12 2Z' }
+    ] },
+
+    // ── Marks ───────────────────────────────────────────────────────────────
+    door: { name: 'Doorway', group: 'mark', vb: [0, 0, 24, 24], parts: [
+        { t: 's2', d: 'M5 21V4h14v17h-3.6V7.6H8.6V21Z' },
+        { t: 'a0', d: 'M13.4 13.8a1.2 1.2 0 1 0 2.4 0 1.2 1.2 0 1 0-2.4 0Z' }
+    ] },
+    star: { name: 'Landmark', group: 'mark', vb: [0, 0, 24, 24], parts: [
+        { t: 's0', d: 'M12 2l2.8 6.6L22 9.4l-5.4 4.8 1.6 7.2L12 17.8 5.8 21.4l1.6-7.2L2 9.4l7.2-.8Z' }
+    ] },
+    pin: { name: 'Point of interest', group: 'mark', vb: [0, 0, 24, 24], parts: [
+        { t: 's1', d: 'M12 2a7 7 0 0 1 7 7c0 5.2-7 13-7 13S5 14.2 5 9a7 7 0 0 1 7-7Z' },
+        { t: 'a0', d: 'M12 6a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z' }
+    ] }
+};
+
+// [v3.0.6 ICON-LIB] The three questions every call site asks about an icon
+// string, answered in ONE place so no surface has to know the prefix rule.
+function ceIconIsSvg(icon: any): boolean {
+    return String(icon || '').indexOf(CE_ICON_PREFIX) === 0;
+}
+function ceIconKeyOf(icon: any): string {
+    var s = String(icon || '');
+    return ceIconIsSvg(s) ? s.slice(CE_ICON_PREFIX.length) : '';
+}
+function ceIconDef(icon: any): any {
+    var k = ceIconKeyOf(icon);
+    return (k && CE_ICON_LIB[k]) ? CE_ICON_LIB[k] : null;
+}
+
+// The shared half of both renderers: the <path> children. Returns [] for an
+// unknown key -- a library entry that was deleted or a story written against a
+// newer build must degrade to NO ICON, never to a thrown render.
+function _ceIconPaths(def: any, keyPrefix: string): any[] {
+    var out: any[] = [];
+    var parts: any[] = (def && def.parts) || [];
+    for (var i = 0; i < parts.length; i++) {
+        var p = parts[i];
+        if (!p || !p.d) continue;
+        var op = CE_ICON_OP[String(p.t || 's0')];
+        if (op === undefined) op = 1;
+        var node = h('path', {
+            key: keyPrefix + '_p' + i,
+            d: String(p.d),
+            fill: 'currentColor',
+            'fill-opacity': op,
+            // Every authored path above is a closed filled shape EXCEPT
+            // 'plain', whose grass blades are open strokes. Rather than special-
+            // case it, both are always set: a closed path ignores the stroke it
+            // has no room for, and an open one needs it to be visible at all.
+            stroke: 'currentColor',
+            'stroke-opacity': op,
+            'stroke-width': p.d.indexOf('Z') >= 0 ? 0 : 1.6,
+            'stroke-linecap': 'round'
+        });
+        out.push(p.tf ? h('g', { key: keyPrefix + '_g' + i, transform: String(p.tf) }, node) : node);
+    }
+    return out;
+}
+
+// STANDALONE, for any ordinary surface. Sized in px, inherits colour from its
+// parent, and is aria-hidden because it always sits beside a real text label --
+// an icon announced separately would read the place's name twice.
+// [v3.0.8] TAKES AN EXPLICIT KEY, and every call site passes one. The map readout's ghost
+// trail (READOUT-GHOST) was an unkeyed <svg> subtree surviving a swap it should not have;
+// the surviving call sites are all stable lists rather than swaps, but this is a cheap way
+// to make sure they stay that way rather than a thing to rediscover.
+function ceIconSvg(icon: any, px: number, key?: string): any {
+    var def = ceIconDef(icon);
+    if (!def) return null;
+    var vb = def.vb || [0, 0, 24, 24];
+    return h('svg', {
+        key: String(key || ('icsvg_' + ceIconKeyOf(icon))),
+        viewBox: vb.join(' '),
+        width: px, height: px,
+        'aria-hidden': 'true',
+        style: { display: 'block', flex: '0 0 auto', color: 'currentColor' }
+    }, _ceIconPaths(def, 'ic'));
+}
+
+// IN-MAP, and NOT a nested <svg>. The map is already inside a camera transform
+// in viewBox units, so an icon has to arrive in those same units or it would
+// have to be counter-scaled twice -- once for the camera and once for its own
+// coordinate system. A <g> with an explicit translate+scale keeps ONE
+// coordinate story: `size` is the drawn height in map units and everything
+// else follows from the descriptor's own vb, so an imported 512-box icon and
+// an authored 24-box icon land identically without either knowing about the
+// other.
+function ceIconMapGroup(icon: any, cx: number, cy: number, size: number, key: string): any {
+    var def = ceIconDef(icon);
+    if (!def) return null;
+    var vb = def.vb || [0, 0, 24, 24];
+    var vw = Number(vb[2]) || 24, vh = Number(vb[3]) || 24;
+    var span = Math.max(vw, vh) || 24;         // square-fit, so wide icons are not stretched
+    var k = size / span;
+    var tx = cx - (Number(vb[0]) || 0) * k - (vw * k) / 2;
+    var ty = cy - (Number(vb[1]) || 0) * k - (vh * k) / 2;
+    return h('g', {
+        key: key,
+        transform: 'translate(' + tx + ',' + ty + ') scale(' + k + ')',
+        'pointer-events': 'none'
+    }, _ceIconPaths(def, key));
+}
+
+// The picker's own source of truth. Grouped, in a fixed order, so the Entity
+// surface renders whatever is in the table without carrying its own copy of
+// the list -- adding an icon above is genuinely the only step.
+var CE_ICON_GROUPS: any[] = [
+    { id: 'built', label: 'Built' },
+    { id: 'wild',  label: 'Wild' },
+    { id: 'water', label: 'Water' },
+    { id: 'mark',  label: 'Marks' }
+];
+
+function ceIconKeysIn(group: string): string[] {
+    var out: string[] = [], k: string;
+    for (k in CE_ICON_LIB) { if (String(CE_ICON_LIB[k].group) === group) out.push(k); }
+    return out;
+}
+
+// ============================================================================
 // SECTION 32 — WORLD MAP SURFACE (jsx)  [v2.127.0 WORLDMAP]
 // ============================================================================
 // A nested-circle map of the location hierarchy. Supersedes the v2.124.0-v2.126.0
@@ -26849,7 +27546,20 @@ function ceJournalRoot(): any {
 // ============================================================================
 
 var CE_MAP_VB       = 1000;    // viewBox is CE_MAP_VB x CE_MAP_VB, all geometry in these units
-var CE_MAP_PAD      = 10;      // sibling padding, in viewBox units (see two-pass note above)
+var CE_MAP_PAD      = 26;      // sibling padding, in viewBox units (see two-pass note above)
+// [v3.0.5 MAP-LEGIBILITY, per user: "smaller circles with bigger siblings can sit out in
+// space to give them more room, siblings don't have to hug each other"] 10 -> 26.
+// PADDING IS THE ONLY LEVER THAT DOES THIS, and it is worth saying why the obvious
+// alternative is wrong: d3.pack's front-chain packing places each sibling tangent to the
+// chain, so "push the small ones outward" is not a parameter of it -- the only thing that
+// separates siblings at all is the pad added to every radius before packing. Raising it
+// pushes ALL siblings apart, which is what was actually asked for; the small ones simply
+// gain the most, because the same absolute gap is a larger share of a small circle's own
+// diameter.
+// It costs fill ratio -- every circle is slightly smaller inside its parent -- and that is
+// the trade being made deliberately: overlapping names were the reported problem and a
+// denser packing was what caused them. The two-pass converter (see above) already handles
+// the unit conversion, so this number needs no other change.
 var CE_MAP_FONT_VB  = 34;      // apparent label size in viewBox units -- the calibrated constant
 var CE_MAP_CHAR_W   = 0.55;    // average glyph width as a fraction of font size, for fit math
 var CE_MAP_VIEW_H_PX = 380;    // map viewport height IN PIXELS, as a NUMBER -- see PAN-SCALE below
@@ -27171,6 +27881,7 @@ function ceMapBuildTree(metas: any[]): any {
         if (byId[m.id]) continue;
         byId[m.id] = {
             id: String(m.id), name: String(m.name || 'Unnamed'), icon: String(m.icon || ''),
+            mapKind: ceMapKindOf(m.mapKind),
             parentId: m.parentId ? String(m.parentId) : null,
             children: [], parent: null, depth: 0
         };
@@ -27251,7 +27962,7 @@ async function cePublishMap(): Promise<void> {
         var flat: any[] = [];
         ceMapEachBefore(tree, function(n: any) {
             flat.push({
-                id: n.id, name: n.name, icon: n.icon, parentId: n.parentId,
+                id: n.id, name: n.name, icon: n.icon, mapKind: n.mapKind, parentId: n.parentId,
                 depth: n.depth, value: n.value, childCount: (n.children || []).length,
                 x: n.x, y: n.y, r: n.r
             });
@@ -27290,6 +28001,65 @@ async function cePublishMap(): Promise<void> {
 //               adjacent levels", anchored to focus rather than to zoom, so
 //               zooming to a node moves the band for free.
 // A label draws only when BOTH pass.
+// [v3.0.5 MAP-VERBS] The containment path, outermost first, excluding the node itself and
+// the synthetic root. '' when the node sits at the top of the world.
+function _ceMapWhere(nodes: any[], node: any): string {
+    var byId: any = {}, i: number;
+    for (i = 0; i < nodes.length; i++) byId[nodes[i].id] = nodes[i];
+    var chain: string[] = [];
+    var cur = (node && node.parentId) ? byId[node.parentId] : null;
+    var guard = 0;
+    while (cur && guard++ < 1000) {
+        if (cur.id !== CE_MAP_ROOT_ID) chain.unshift(String(cur.name || ''));
+        cur = cur.parentId ? byId[cur.parentId] : null;
+    }
+    if (!chain.length) return '';
+    // Deepest container first reads better in a one-line readout than outermost first:
+    // "in the Cellar, under Ashfell Keep" is how someone would say it out loud.
+    chain.reverse();
+    return 'in ' + chain.join(', under ');
+}
+
+// [v3.0.7 MAP-KIND] ─────────────────────────────────────────────────────────────────────
+// THE THREE ROLES. Everything about how a place is drawn hangs off this table, so adding a
+// fourth is an entry here plus a branch in _ceMapShape -- not a hunt through the render
+// loop.
+//
+//   region     A circle. The default, and what every place created before this patch is,
+//              because 'region' is what the old unconditional circle already was -- an
+//              existing world redraws identically.
+//   structure  A building. NO RING UNLESS IT IS THE FOCUS: from a hilltop you see a town,
+//              not the floor plan of its inn. A structure at rest is its icon and its name,
+//              drawn large. Focus it and it becomes an ordinary place -- ring, normal icon,
+//              top-anchored name -- because that is the moment its inside starts to matter.
+//   interior   A room. Drawn only while the focus is inside its container. Rooms are always
+//              PACKED (geometry stays stable, so nothing shifts when one appears) and
+//              merely not painted.
+//
+// [v3.0.8] KIND CHANGES PAINT AND NEVER GEOMETRY. v3.0.7 drew squares for the latter two
+// and that is reverted: the packer reserves circles, so a square inside one is a second
+// geometry whose containment and overlap must be reconciled with the first, and they
+// disagree at the corners. Anything added to this table gets a different ring, fill, icon
+// size or visibility rule -- not a different outline.
+var CE_MAP_KINDS: any[] = [
+    { id: 'region',    label: 'Region',    hint: 'The default. Always drawn, with a ring around it \u2014 land, water, a district, anything you look at from outside and keep looking into.' },
+    { id: 'structure', label: 'Structure', hint: 'A building. Just its icon, drawn large, with no ring \u2014 until you focus it, when it becomes an ordinary place and its rooms appear.' },
+    { id: 'interior',  label: 'Interior',  hint: 'A room. Hidden until you are looking inside the place that holds it.' }
+];
+
+function ceMapKindOf(v: any): string {
+    var s = String(v || 'region');
+    return (s === 'structure' || s === 'interior') ? s : 'region';
+}
+
+// [v3.0.8] _ceMapSquare WAS HERE AND IS DELETED. It returned a square inscribed in a
+// node's reserved circle, for the structure/interior shapes v3.0.7 drew. Removed on the
+// user's call, and the reasoning is worth keeping because it applies to anything else
+// tempted to draw a second shape here: the packer reserves CIRCLES, so a square inside one
+// is a second geometry whose containment and overlap have to be checked against the first,
+// and the two disagree at the corners. Kind changes paint only. One shape, one set of
+// maths, one unit-test suite.
+
 function ceMapBandFor(nodes: any[], focusId: string): any {
     var byId: any = {}, i: number;
     for (i = 0; i < nodes.length; i++) byId[nodes[i].id] = nodes[i];
@@ -27307,6 +28077,50 @@ function ceMapBandFor(nodes: any[], focusId: string): any {
         if (nodes[i].parentId === focusId) band[nodes[i].id] = 'child';
     }
     return band;
+}
+
+// [v3.0.5 MAP-LEGIBILITY, per user: "phrases can wrap but words should not be cut off and
+// can be allowed to cross border"] GREEDY WORD WRAP, AND A WORD IS NEVER BROKEN.
+//
+// The rule this replaces truncated to one line with an ellipsis, so "The Drowned Chapel"
+// read as "The Drowne\u2026" -- which is worse than useless on a map, because the two places
+// whose names share a prefix become indistinguishable at exactly the zoom where you are
+// trying to tell them apart.
+//
+// A WORD LONGER THAN THE LINE IS LEFT WHOLE AND ALLOWED TO OVERFLOW THE CIRCLE. That is
+// deliberate and it is the user's call: an overflowing name is still readable and still
+// unambiguous, whereas a broken one is neither. Overlap between NEIGHBOURS is the thing
+// worth avoiding, and that is what the padding bump above addresses -- not this.
+//
+// Capped at CE_MAP_LINES. Past that the name is genuinely too long for the circle at this
+// zoom and the honest signal is an ellipsis on its own, appended to the last kept line
+// rather than cut into it.
+var CE_MAP_LINES = 3;
+
+function ceMapWrapLabel(name: string, chars: number): string[] {
+    var words = String(name || '').split(/\s+/);
+    var lines: string[] = [];
+    var cur = '';
+    var w = 0;
+    for (w = 0; w < words.length; w++) {
+        var word = words[w];
+        if (!word) continue;
+        if (!cur) { cur = word; continue; }
+        if ((cur.length + 1 + word.length) <= chars) { cur = cur + ' ' + word; continue; }
+        lines.push(cur);
+        cur = word;
+        if (lines.length >= CE_MAP_LINES) break;
+    }
+    if (cur && lines.length < CE_MAP_LINES) lines.push(cur);
+    // Truncated: say so at the end of the last line we kept. Never inside a word.
+    if (lines.length === CE_MAP_LINES) {
+        var kept = 0;
+        for (w = 0; w < lines.length; w++) kept += lines[w].split(' ').length;
+        var totalWords = 0;
+        for (w = 0; w < words.length; w++) { if (words[w]) totalWords++; }
+        if (kept < totalWords) lines[CE_MAP_LINES - 1] = lines[CE_MAP_LINES - 1] + '\u2026';
+    }
+    return lines;
 }
 
 // How many characters fit across this circle at the current zoom, or 0 for none.
@@ -27476,7 +28290,14 @@ function _ceMapRoot(): any {
         });
     }
 
+    // [v3.0.8, per user: "need to make sure text is always on top and legible over svgs
+    // they may overlap"] THREE LAYERS, PAINTED IN THIS ORDER. Two was not enough: icons
+    // used to share the label array, so ordering was per-NODE rather than per-KIND and a
+    // child's icon -- pushed later, because children come after parents -- painted over the
+    // parent's name. SVG has no z-index; paint order is the only lever, so the layers have
+    // to be separate arrays rather than separate intentions.
     var circles: any[] = [];
+    var icons: any[] = [];
     var labels: any[] = [];
     var i: number;
     for (i = 0; i < nodes.length; i++) {
@@ -27487,13 +28308,60 @@ function _ceMapRoot(): any {
         var isSel = (n.id === st.selectedId);
         var inBand = !!band[n.id];
 
+        // [v3.0.7 MAP-KIND, revised v3.0.8] ── visibility, then shape, then label ──
+        var kind = ceMapKindOf(n.mapKind);
+        var isFocus = (n.id === st.focusId);
+
+        // [v3.0.8, per user: "interiors are disappearing on the map visually when in
+        // focus"] THE OLD RULE ASKED ABOUT THE ROOM AND SHOULD HAVE ASKED ABOUT THE
+        // BUILDING. It was `parentId === focusId`, which is true for a room whose structure
+        // you are looking at and FALSE for the room you have walked into -- so focusing a
+        // room made it vanish, taking its own label and hit target with it. It was also
+        // false for every sibling room, so stepping between two rooms in one building
+        // emptied the building.
+        //
+        // The right question is whether the FOCUS IS INSIDE THIS ROOM'S CONTAINER. The band
+        // already answers it: ceMapBandFor marks the focus and every ancestor of it, so a
+        // room is drawn exactly when its parent is one of those. That single test covers
+        // all four cases at once -- parent focused, this room focused, a sibling focused,
+        // and something deeper inside this room focused -- because in every one of them the
+        // parent is on the focus chain.
+        if (kind === 'interior') {
+            var pBand = String(band[String(n.parentId || '')] || '');
+            if (pBand !== 'focus' && pBand !== 'ancestor') continue;
+        }
+
+        // [v3.0.8, per user: "I don't like the squares... I don't want to combine square
+        // graphing math within circle graphing"] SQUARES ARE GONE, AND _ceMapSquare WITH
+        // THEM. Everything is a circle again. The objection was the right one: the packer
+        // reserves a circle, so a square drawn inside it is a second shape whose containment
+        // and overlap have to be reasoned about against the first, and the two answers do
+        // not agree at the corners. Kind now changes only PAINT -- whether there is a ring
+        // and how big the icon is -- and never geometry, so there is exactly one set of
+        // maths on this surface.
+        //
+        // A structure at rest has no ring. It still has to be tappable, so it is drawn in
+        // fully transparent paint rather than fill:'none' -- 'none' is not painted and
+        // therefore not hit-tested, which would make every building unselectable.
+        //
+        // [v3.0.8, per user: "when in focus, structures no longer need to be centered and
+        // scaled up, they should display like default in focus"] `bare` is the ONLY thing
+        // that separates a structure from a region now, and it turns off the moment the
+        // structure is focused or selected. A focused building is just a place.
+        var bare = (kind === 'structure' && !isFocus && !isSel);
+
+        var shFill = bare ? 'rgba(0,0,0,0)'
+            : (isCam ? 'rgba(232,192,125,0.14)'
+                     : (isLeaf ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.02)'));
+        var shStroke = isSel ? CE_SEM.building : (isCam ? CE_SEM.building : 'currentColor');
+        var shWidth = bare ? 0 : (isSel ? 3 : (isCam ? 2.5 : 1.2)) / cam.k;
+        var shOpacity = bare ? '0' : (isSel || isCam ? '1' : (inBand ? '0.55' : '0.22'));
+
         circles.push(h('circle', {
             key: 'mc_' + n.id,
             cx: n.x, cy: n.y, r: n.r,
-            fill: isCam ? 'rgba(232,192,125,0.14)' : (isLeaf ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.02)'),
-            stroke: isSel ? CE_SEM.building : (isCam ? CE_SEM.building : 'currentColor'),
-            'stroke-width': (isSel ? 3 : (isCam ? 2.5 : 1.2)) / cam.k,
-            'stroke-opacity': isSel || isCam ? '1' : (inBand ? '0.55' : '0.22'),
+            fill: shFill, stroke: shStroke,
+            'stroke-width': shWidth, 'stroke-opacity': shOpacity,
             style: { cursor: isRoot ? 'default' : 'pointer' },
             onClick: isRoot ? null : (function(nn: any) {
                 return function() { ceMapPatch(function() { return { selectedId: nn.id, focusId: nn.id }; }); };
@@ -27502,25 +28370,129 @@ function _ceMapRoot(): any {
 
         if (!inBand) continue;
         var chars = ceMapFitChars(n.r, cam.k);
-        if (chars < 3) continue;
-        var label = n.name;
-        if (n.icon) label = n.icon + ' ' + label;
-        if (label.length > chars) label = label.slice(0, Math.max(1, chars - 1)) + '\u2026';
-        // A parent's name rides near its top edge so it does not sit on top of its
-        // children; a leaf has nothing inside it, so its name goes in the middle.
-        var ly = isLeaf ? (n.y + CE_MAP_FONT_VB / (cam.k * 3)) : (n.y - n.r + (CE_MAP_FONT_VB * 1.1) / cam.k);
-        labels.push(h('text', {
-            key: 'ml_' + n.id,
-            x: n.x, y: ly,
-            'text-anchor': 'middle',
-            fill: 'currentColor',
-            // Ladder: an ancestor label is context for where you are, not the thing
-            // itself -- t3. The current band is the content, t1.
-            opacity: (band[n.id] === 'ancestor') ? CE_OP.t3 : CE_OP.t1,
-            'font-size': CE_MAP_FONT_VB / cam.k,
-            'font-weight': isLeaf ? '400' : '600',
-            'pointer-events': 'none'
-        }, label));
+        // Floor lowered from 3 to 2 now that wrapping exists: at 2 a two-word name simply
+        // takes two lines instead of vanishing, which is more useful than an empty circle.
+        if (chars < 2) continue;
+
+        var fs = CE_MAP_FONT_VB / cam.k;
+        var lineH = fs * 1.12;
+        var lines = ceMapWrapLabel(n.name, chars);
+        if (!lines.length) continue;
+
+        // [v3.0.5 MAP-LEGIBILITY, per user: "when tier is selected, children names are
+        // centered in their circle, not at top (doesn't conflict with their children who
+        // aren't visible)"] THE TOP-EDGE RULE NOW ASKS THE RIGHT QUESTION.
+        //
+        // It used to be "does this node have children", which is a fact about the WORLD.
+        // The reason the rule exists is a fact about the SCREEN: a name sits at the top
+        // edge only to stay off the labels of the children drawn inside it. A node whose
+        // children carry no labels right now has nothing to stay off, and centring is
+        // strictly better there -- it reads as the name OF the circle rather than as a
+        // heading above a container.
+        //
+        // Which nodes have labelled children falls straight out of the band: labels are
+        // drawn for focus, ancestors and the focus's direct children, so a node's children
+        // are labelled exactly when that node is the focus or an ancestor of it. Every
+        // 'child'-band node -- the tier the user just selected into -- centres, whether or
+        // not it is a leaf.
+        var bandKind = String(band[n.id] || '');
+        var hasLabelledKids = !isLeaf && (bandKind === 'focus' || bandKind === 'ancestor');
+
+        // [v3.0.5] The icon is its own element now, centred directly above the name,
+        // rather than a prefix glued onto the first line. As a prefix it shifted the name
+        // off-centre by half a glyph, it counted against the character budget so an
+        // icon cost the name two or three letters, and it could be the thing an ellipsis
+        // truncated.
+        //
+        // [v3.0.7 MAP-KIND, per user: "the icons are too small"] SIZED OFF THE CIRCLE, NOT
+        // OFF THE LABEL. Tying it to font size was the mistake: the label counter-scales
+        // with zoom so it stays ~constant on screen, which meant the icon stayed a marker
+        // no matter how much room the place actually had. Sized off n.r it grows with the
+        // circle, so a detailed imported icon has somewhere to be detailed.
+        //
+        // A BARE STRUCTURE GETS MOST OF ITS CIRCLE, because for a building at rest the icon
+        // is the ONLY thing drawn -- there is no ring, so anything smaller reads as a speck
+        // in empty space. [v3.0.8] The test is `bare`, not `kind === 'structure'`: a
+        // focused building is drawn as an ordinary place, and an ordinary place's icon is a
+        // marker above its name rather than the place itself.
+        // Floored at the old label-relative size so a small circle keeps its icon at all.
+        var iconSize = 0;
+        if (n.icon) {
+            var iconWant = bare ? (n.r * 1.30) : (n.r * 0.52);
+            iconSize = Math.max(fs * 1.25, Math.min(iconWant, n.r * 1.4));
+        }
+        var iconGap  = n.icon ? (fs * 0.30) : 0;
+        var blockH   = (n.icon ? (iconSize + iconGap) : 0) + lines.length * lineH;
+
+        // topY is the top of the whole block (icon included). Centred blocks are centred
+        // on the circle; top-anchored ones sit one line inside the edge, as before.
+        // [v3.0.7 MAP-KIND, revised v3.0.8] A BARE structure centres, because its rooms are
+        // not drawn and there is nothing below to stay clear of. The moment it is focused
+        // it top-anchors like anything else with visible children -- which is what "display
+        // like default in focus" means here.
+        var topY = (hasLabelledKids && !bare)
+            ? (n.y - n.r + lineH * 0.55)
+            : (n.y - blockH / 2);
+
+        var dim = (bandKind === 'ancestor') ? CE_OP.t3 : CE_OP.t1;
+
+        if (n.icon) {
+            // [v3.0.6 ICON-LIB] Two kinds of icon, one slot. A library key draws
+            // as vector paths and an emoji still draws as text -- the emoji path
+            // is byte-for-byte what shipped in v2.127.0, because an author who
+            // typed a globe into that field years ago should see no change at
+            // all. The opacity band applies to both, so a vector icon recedes on
+            // an ancestor exactly as its label does.
+            var iconNode = ceIconMapGroup(n.icon, n.x, topY + iconSize / 2, iconSize, 'mi_' + n.id);
+            if (iconNode) {
+                icons.push(h('g', { key: 'mig_' + n.id, opacity: dim }, iconNode));
+            } else {
+                icons.push(h('text', {
+                    key: 'mi_' + n.id,
+                    x: n.x, y: topY + iconSize * 0.82,
+                    'text-anchor': 'middle',
+                    fill: 'currentColor', opacity: dim,
+                    'font-size': iconSize,
+                    'pointer-events': 'none'
+                }, n.icon));
+            }
+        }
+
+        var lineTop = topY + (n.icon ? (iconSize + iconGap) : 0);
+        var li = 0;
+        for (li = 0; li < lines.length; li++) {
+            // ONE <text> PER LINE, not one <text> with <tspan dy>. tspan/dy is the usual
+            // SVG idiom and is avoided here on purpose: every y in this file is already
+            // computed in viewBox units inside the camera transform, so an absolute y per
+            // line is the same arithmetic the rest of the map uses, while dy would
+            // introduce a second, relative coordinate convention that the zoom counter-
+            // scaling would then have to be reasoned about twice.
+            labels.push((function(txt: string, idx: number) {
+                return h('text', {
+                    key: 'ml_' + n.id + '_' + idx,
+                    x: n.x, y: lineTop + idx * lineH + fs * 0.80,
+                    'text-anchor': 'middle',
+                    fill: 'currentColor',
+                    // Ladder: an ancestor label is context for where you are, not the
+                    // thing itself -- t3. The current band is the content, t1.
+                    opacity: dim,
+                    'font-size': fs,
+                    'font-weight': hasLabelledKids ? '600' : (isLeaf ? '400' : '500'),
+                    // [v3.0.8] A HALO, painted first, so a name stays readable where it
+                    // crosses a detailed icon. paint-order:'stroke' is what makes this a
+                    // halo rather than an outline -- without it the stroke draws ON TOP of
+                    // the fill and the letters come out hollow. The stroke is the map's own
+                    // background colour, so it reads as the text pushing the icon aside
+                    // rather than as a second colour entering the surface.
+                    stroke: CE_FILL,
+                    'stroke-width': fs * 0.22,
+                    'stroke-opacity': 0.85,
+                    'stroke-linejoin': 'round',
+                    'paint-order': 'stroke',
+                    'pointer-events': 'none'
+                }, txt);
+            })(lines[li], li));
+        }
     }
 
     var selected: any = null;
@@ -27534,13 +28506,48 @@ function _ceMapRoot(): any {
                 padding: CE_T.s3 + ' 0', borderTop: '1px solid ' + CE_LINE }
         },
             h('div', { style: { flex: '1 1 140px', minWidth: '0' } },
+                // [v3.0.8 READOUT-GHOST, per user: "each time another icon is left behind
+                // and it creates a trail of icons behind the location name"] NO INLINE SVG
+                // HERE ANY MORE.
+                //
+                // v3.0.6 put a ceIconSvg beside the name so a library key would not be
+                // shown raw. The name is a plain text child and the icon is an <svg> with a
+                // whole subtree under it, and swapping selection replaced the text while
+                // leaving the previous svg mounted -- one more every time, exactly the
+                // trail reported. It is the same family as HOST-ORPHAN: an abandoned
+                // subtree that keeps painting because nothing tore it down.
+                //
+                // A keyed element would probably have fixed it, and that is precisely why
+                // it is not what was done. This icon was decoration -- the map beside it is
+                // already showing the icon at size, so the readout was saying the same
+                // thing twice -- and a decorative element is not worth a fix that has to
+                // hold against a reconciler this file has already been bitten by twice.
+                // The raw-key problem it was solving is solved instead by not printing the
+                // key: an svg: value contributes nothing to this line rather than leaking
+                // storage format into it.
                 h('div', { style: { fontSize: CE_T.fs, fontWeight: '600' } },
-                    (selected.icon ? selected.icon + ' ' : '') + selected.name),
+                    (ceIconIsSvg(selected.icon) ? '' :
+                        (selected.icon ? selected.icon + ' ' : '')) + selected.name),
+                // [v3.0.5 MAP-VERBS] 'Depth 3' is graph language for a thing the user is
+                // looking at as a map. What a map says instead is WHERE something is, so
+                // this walks the parent chain and prints the containment path. Built from
+                // `nodes`, which is already in hand and already carries parentId -- no new
+                // read, and it cannot disagree with what is drawn because it is derived
+                // from the same array.
                 h('div', { style: { fontSize: CE_T.fsSm, opacity: '0.58' } },
-                    (isHere ? 'Scene is here' : 'Depth ' + selected.depth) +
+                    (isHere ? 'The scene is here' : (_ceMapWhere(nodes, selected) || 'Top of the world')) +
                     (selected.childCount ? ' \u00b7 ' + selected.childCount + ' inside' : ''))
             ),
-            ceBtn('Zoom to', 'map:zoom:' + selected.id, function() { zoomTo(selected); return Promise.resolve(); }),
+            // [v3.0.5 MAP-VERBS, per user: "buttons that sound very similar"] THREE VERBS,
+            // TWO KINDS, AND THE OLD NAMES HID THE DIFFERENCE. 'Zoom to', 'Go to scene' and
+            // 'Set scene location' all read as going somewhere; two of them only move the
+            // CAMERA and the third moves the STORY. Renamed so the kind is audible:
+            //   Centre        -- camera, onto the selected place
+            //   You are here  -- camera, back onto wherever the scene actually is
+            //   Travel here   -- the world. This is the only one that writes anything.
+            // 'Travel here' also matches what it does downstream (commitTravel), so the
+            // button, the function and the toast finally say the same word.
+            ceBtn('Centre', 'map:zoom:' + selected.id, function() { zoomTo(selected); return Promise.resolve(); }),
             // [v2.147.0 JSXENTITY] The door into the entity surface, and the surface list's
             // "add/edit location button" for the Map half. The return address is set HERE
             // rather than defaulted there, which is the whole NAV-BACK contract.
@@ -27548,7 +28555,7 @@ function _ceMapRoot(): any {
                 ceNav('entity', selected.id, '', { surface: 'map', entityId: '', label: 'Map' });
                 return Promise.resolve();
             }),
-            isHere ? null : ceBtn('Set scene location', 'map:travel:' + selected.id, function() {
+            isHere ? null : ceBtn('Travel here', 'map:travel:' + selected.id, function() {
                 return commitTravel(selected.id, true).then(function() {
                     try { api.v1.ui.toast('Scene moved to ' + selected.name + '.', { type: 'success', autoClose: 1800 }); } catch (e) {}
                     return cePublishMap();
@@ -27575,7 +28582,7 @@ function _ceMapRoot(): any {
                 style: { width: '100%', height: '100%', display: 'block' }
             },
                 h('g', { transform: 'translate(' + cam.x + ',' + cam.y + ') scale(' + cam.k + ')' },
-                    circles, labels)
+                    circles, icons, labels)
             )
         ),
         h('div', { style: { display: 'flex', gap: CE_T.s2, flexWrap: 'wrap', padding: CE_T.s2 + ' 0' } },
@@ -27602,7 +28609,7 @@ function _ceMapRoot(): any {
                 ceMapPatch(function() { return { camera: { x: 0, y: 0, k: 1 } }; });
                 return Promise.resolve();
             }),
-            ceBtn('Go to scene', 'map:tocam', function() {
+            ceBtn('You are here', 'map:tocam', function() {
                 var target: any = null;
                 for (var q = 0; q < nodes.length; q++) { if (nodes[q].id === camLocId) { target = nodes[q]; break; } }
                 if (target) zoomTo(target);
@@ -30648,23 +31655,43 @@ function _ceImagesGalleryTab(st: any): any {
         ? (total + ' image' + (total === 1 ? '' : 's') + ' across every story')
         : (recs.length + ' image' + (recs.length === 1 ? '' : 's') + ' in this story');
 
+    // [v3.0.3 CEGAL-SEGMENTED, per user: "split the toggle into two different buttons so it
+    // can't be clicked twice"] THE FLIP IS GONE. THERE IS NO TOGGLE HERE ANY MORE.
+    //
+    // The history is worth keeping because it is a ladder of three fixes to one bug, and
+    // only the last one is structural:
+    //   v2.137.0 CEGAL-IDEMP captured the target at render time, which made a duplicate
+    //     harmless ONLY while it landed before Preact re-rendered.
+    //   v3.0.2 TAP-FLIP added a per-op time guard, which stops a duplicate that lands
+    //     after a re-render -- but only if it lands inside CE_TAP_FLIP_MS, a window that is
+    //     still inferred rather than measured.
+    //   This is the one that does not depend on timing at all.
+    //
+    // TWO BUTTONS, EACH SETTING AN ABSOLUTE VALUE. 'This story' writes false, 'All stories'
+    // writes true. Firing either one twice is identical to firing it once, so a duplicate
+    // click event -- however far apart, however the re-render lands -- CANNOT produce a
+    // different result than a single one. That is idempotence by construction rather than
+    // by guard, and it is why the guard is not kept here as well: a guard that can never
+    // fire is a guard nobody can test.
+    //
+    // The two also carry SEPARATE opIds, so ceAction's busy latch is per-button. The old
+    // shared 'gal:scope' meant the latch a first fire set was the same latch the second
+    // fire read, which is a second way one physical tap could be seen twice.
+    //
+    // The active one is `primary` and the inactive one is plain: SS11 -- state is never
+    // colour alone, and here the label is the state, so "This story" being lit says which
+    // scope is on without needing a check glyph.
+    var scopeBtn = function(id: string, label: string, want: boolean): any {
+        return ceBtn(label, 'gal:scope:' + id, function() {
+            ceImagesPatch(function() { return { galAll: want }; });
+            return Promise.resolve();
+        }, (st.galAll === want) ? 'primary' : undefined);
+    };
+
     var head = h('div', { style: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: CE_T.s2 } },
         h('div', { style: { flex: '1 1 140px', fontSize: CE_T.fsSm, opacity: '0.58' } }, scopeLabel),
-        // [v2.137.0 CEGAL-IDEMP] Target captured HERE, at render time, not inverted from
-        // live state inside the patch closure. This is an instant handler (no await), so
-        // ceAction's busy latch clears before a real duplicate fire could land -- only
-        // ceTap's time guard protects it, and that guard is provisional (see CE_TAP_MS).
-        // A duplicate fire against `!s.galAll` reads the ALREADY-flipped value and flips
-        // it back, which is exactly the bug reported: toggle, then immediately revert.
-        // Capturing `target` makes a duplicate fire idempotent instead -- the fast case
-        // (second event lands before Preact re-renders) is now silently harmless. The slow
-        // case (second event lands after a re-render hands it a fresh closure) is not fixed
-        // by this alone; see the lesson entry for why and what full fix would take.
-        ceBtn(st.galAll ? 'This story' : 'All stories', 'gal:scope', function() {
-            var target = !st.galAll;
-            ceImagesPatch(function() { return { galAll: target }; });
-            return Promise.resolve();
-        }, st.galAll ? 'primary' : undefined),
+        scopeBtn('this', 'This story', false),
+        scopeBtn('all', 'All stories', true),
         ceBtn('Refresh', 'gal:refresh', function() { return ceGalleryRequest(); })
     );
 
@@ -31479,6 +32506,66 @@ function _ceEntityPlacement(id: string, ent: any, st: any): any {
     return ceGroup('Placement', h('div', { style: { display: 'flex', flexDirection: 'column', gap: CE_T.s3 } }, kids));
 }
 
+// [v3.0.6 ICON-LIB] The picker. A GRID OF THE ICONS THEMSELVES, not a list of
+// their names -- the whole question being asked is "which of these looks like
+// the place I am describing", and a name cannot answer it. Tapping the
+// currently-set icon clears it, so the control is its own undo and there is no
+// separate Clear button competing for the row.
+//
+// It reads CE_ICON_LIB through ceIconKeysIn rather than listing keys, so
+// adding an icon to that table is the only step needed to make it appear here.
+// Reads the hint off CE_MAP_KINDS rather than switching on the value, so adding a role
+// there is genuinely the only edit.
+function _ceMapKindHint(v: any): string {
+    var want = ceMapKindOf(v);
+    for (var i = 0; i < CE_MAP_KINDS.length; i++) {
+        if (CE_MAP_KINDS[i].id === want) return String(CE_MAP_KINDS[i].hint || '');
+    }
+    return '';
+}
+
+function _ceEntityIconPicker(id: string, ent: any): any {
+    var cur = String(ent && ent.icon || '');
+    var curKey = ceIconKeyOf(cur);
+    var groups: any[] = [];
+
+    for (var g = 0; g < CE_ICON_GROUPS.length; g++) {
+        var grp = CE_ICON_GROUPS[g];
+        var keys = ceIconKeysIn(String(grp.id));
+        if (!keys.length) continue;
+        var cells: any[] = [];
+        for (var i = 0; i < keys.length; i++) {
+            cells.push((function(k: string) {
+                var on = (curKey === k);
+                var def = CE_ICON_LIB[k];
+                return ceIconBtn(
+                    on ? ('Remove the ' + def.name + ' icon') : ('Use the ' + def.name + ' icon'),
+                    ceIconSvg(CE_ICON_PREFIX + k, 22, 'icpick_' + k),
+                    'ent:icon:' + id + ':' + k,
+                    function() {
+                        return ceEntityWrite(id, 'icon', on ? '' : (CE_ICON_PREFIX + k));
+                    },
+                    on ? 'primary' : undefined
+                );
+            })(keys[i]));
+        }
+        groups.push(h('div', { key: 'igw_' + grp.id, style: {
+            display: 'flex', flexDirection: 'column', gap: CE_T.s1
+        } },
+            h('div', { style: { fontSize: CE_T.fsSm, opacity: CE_OP.t3 } }, String(grp.label)),
+            h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: CE_T.s1 } }, cells)
+        ));
+    }
+
+    return ceGroup('Icon', h('div', { style: {
+        display: 'flex', flexDirection: 'column', gap: CE_T.s3
+    } },
+        h('div', { style: { fontSize: CE_T.fsSm, opacity: CE_OP.t2, lineHeight: CE_T.lhProse } },
+            'Drawn on the map above the name. These follow the map\u2019s own colour, so they read the same on any theme \u2014 an emoji in the field above does not.'),
+        groups
+    ));
+}
+
 function _ceEntityLore(id: string, ent: any, st: any): any {
     var linked = !!ent.lorebookEntryId;
     var tags: string[] = ent.lorebookTags || [];
@@ -31500,6 +32587,7 @@ function _ceEntityLore(id: string, ent: any, st: any): any {
             placeholder: 'Extended info NOT already in the description \u2014 history, secrets, rules, reputation\u2026',
             onCommit: function(v: string) { return ceEntityWrite(id, 'lorebookText', v); }
         }),
+        h('div', { key: 'ent_lore_gen' }, _ceEntGenBtn(id, ent, 'lorebookText')),
         h('div', { key: 'ent_lore_note', style: { fontSize: CE_T.fsSm, opacity: CE_OP.t3, lineHeight: CE_T.lhProse } },
             linked
                 ? 'Linked. Injects when the name or one of the keys below appears in the story.'
@@ -31650,7 +32738,7 @@ async function ceEntityImgGenerate(id: string): Promise<void> {
             return;
         }
         var compiled = compileActiveImageFields();
-        await broadcastToTM(EVT_GENERATE_IMAGE, {
+        await ceBroadcastImageGen({
             uuid: api.v1.uuid(),
             prompt: '',
             characters: [],
@@ -31708,6 +32796,13 @@ function _ceEntityImage(id: string, ent: any, st: any): any {
         ceBtn('Generate', 'ent:imggen:' + id, function() { return ceEntityImgGenerate(id); }, 'primary'),
         ceIconBtn('Edit this image\u2019s prompt', ceIconEdit(), 'ent:imgedit:' + id,
             function() { return ceImgSlotAction(id, CE_IMG_SLOT_AVATAR, 'edit'); }),
+        // [v3.0.1 IMG-UPLOAD] Works here for the reason ENT-IMAGE's note above already
+        // established and did not have to re-argue: the bridge's image layer never looks
+        // the id up as a character, so an entity id in the charId position resolves to
+        // '<entityId>_em_Avatar' exactly as a character's does. One bridge op, both
+        // surfaces, no location-specific path.
+        ceIconBtn('Upload an image for this location', ceIconUpload(), 'ent:imgup:' + id,
+            function() { return ceImgSlotAction(id, CE_IMG_SLOT_AVATAR, 'upload'); }),
         ceIconBtn('Download this image', ceIconDownload(), 'ent:imgdl:' + id,
             function() { return ceImgSlotAction(id, CE_IMG_SLOT_AVATAR, 'download'); }),
         // DESTRUCTIVE-NEVER-IN-PLACE: this button asks, and the handler is the same in both
@@ -31781,10 +32876,36 @@ function _ceEntityRoot(): any {
         h('div', { style: { flex: '0 0 68px' } },
             h(ceField, {
                 key: 'ent_icon', k: 'ent:icon:' + id, label: 'Icon',
-                value: ent.icon || '', placeholder: '\ud83c\udf0d',
+                // [v3.0.6 ICON-LIB] Still a free text field, and still the way an
+                // emoji gets in. A library key typed here by hand also works; the
+                // grid below is a faster route to the same value, not a different
+                // mechanism.
+                value: ceIconIsSvg(ent.icon) ? '' : (ent.icon || ''),
+                placeholder: ceIconIsSvg(ent.icon) ? '\u2014' : '\ud83c\udf0d',
                 onCommit: function(v: string) { return ceEntityWrite(id, 'icon', v); }
             }))
     ));
+
+    // [v3.0.7 MAP-KIND] Only locations are drawn on the map, so only locations are asked.
+    if (ent.type === 'location') {
+        body.push(h('div', { key: 'ent_mapkind', style: {
+            display: 'flex', flexDirection: 'column', gap: CE_T.s1
+        } },
+            h('div', { style: { fontSize: CE_T.fsSm, opacity: CE_OP.t2 } }, 'On the map'),
+            ceSelect({
+                k: 'ent:mapkind:' + id,
+                value: ceMapKindOf((ent as any).mapKind),
+                options: CE_MAP_KINDS,
+                onCommit: function(v: string) {
+                    return ceEntityWrite(id, 'mapKind', ceMapKindOf(v)).then(function() { return cePublishMap(); });
+                }
+            }),
+            h('div', { style: { fontSize: CE_T.fsSm, opacity: CE_OP.t3, lineHeight: CE_T.lhProse } },
+                _ceMapKindHint((ent as any).mapKind))
+        ));
+    }
+
+    body.push(h('div', { key: 'ent_iconpick' }, _ceEntityIconPicker(id, ent)));
 
     body.push(h('div', { key: 'ent_type', style: { display: 'flex', flexDirection: 'column', gap: CE_T.s1 } },
         h('div', { style: { fontSize: CE_T.fsSm, opacity: CE_OP.t2 } }, 'Kind'),
@@ -31803,7 +32924,11 @@ function _ceEntityRoot(): any {
             value: ent.description || '', multiline: true, rows: 4, well: true,
             placeholder: 'What is sensed on arrival\u2026',
             onCommit: function(v: string) { return ceEntityWrite(id, 'description', v); }
-        })
+        }),
+        // [v3.0.3 ENTGEN] Directly under the field it writes, exactly as the character
+        // surface places it -- the generator is an affordance OF the field, not a separate
+        // tool that happens to affect it. Null for a kind with no prompt defined.
+        h('div', { key: 'ent_desc_gen' }, _ceEntGenBtn(id, ent, 'description'))
     ];
     if (ent.type === 'location') {
         descKids.push(h(ceField, {
