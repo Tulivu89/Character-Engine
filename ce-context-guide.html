@@ -1,0 +1,806 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Character Engine — What the model reads</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#EFF1F4; --card:#FCFDFE; --ink:#151A21; --ink-2:#4C5763; --ink-3:#7E8A96;
+  --rule:#D3DAE1; --nai:#3F5568; --ce:#7A3E9D; --ce-soft:#F1E8F8; --nai-soft:#E3E9EF;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --sans:"IBM Plex Sans Condensed",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--paper);color:var(--ink);
+  font-family:var(--sans);font-size:15px;line-height:1.6}
+.wrap{max-width:900px;margin:0 auto;padding:0 24px 110px}
+
+header.mast{padding:60px 0 26px}
+.eyebrow{font-weight:700;font-size:11px;letter-spacing:.22em;text-transform:uppercase;
+  color:var(--ce);margin:0 0 12px}
+h1{font-weight:700;font-size:clamp(30px,5.6vw,46px);line-height:1.02;letter-spacing:-.02em;
+  margin:0 0 16px;max-width:20ch}
+.thesis{max-width:60ch;color:var(--ink-2);margin:0 0 22px;font-size:15px}
+.thesis b{color:var(--ink);font-weight:600}
+
+.key{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:6px}
+.key span{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink-2);
+  background:var(--card);border:1px solid var(--rule);padding:6px 12px}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--nai);flex:none}
+.dot.ce{background:var(--ce)}
+
+.tools{display:flex;gap:8px;margin:22px 0 0}
+button{font-family:var(--sans);font-weight:600;font-size:12px;letter-spacing:.08em;
+  text-transform:uppercase;background:var(--card);border:1px solid var(--rule);
+  color:var(--ink-2);padding:8px 14px;cursor:pointer}
+button:hover{border-color:var(--ce);color:var(--ce)}
+button:focus-visible{outline:2px solid var(--ce);outline-offset:2px}
+
+.act{margin-top:44px}
+.act > h2{font-weight:700;font-size:12px;letter-spacing:.2em;text-transform:uppercase;
+  color:var(--ink-3);margin:0 0 4px;padding-bottom:8px;border-bottom:2px solid var(--ink)}
+.act > .sub{font-size:13.5px;color:var(--ink-2);margin:10px 0 14px;max-width:62ch}
+
+details.row{background:var(--card);border:1px solid var(--rule);border-left:3px solid var(--nai);
+  margin-bottom:7px}
+details.row.ce{border-left-color:var(--ce)}
+details.row > summary{list-style:none;cursor:pointer;padding:12px 15px;
+  display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+details.row > summary::-webkit-details-marker{display:none}
+details.row > summary:focus-visible{outline:2px solid var(--ce);outline-offset:-2px}
+.name{font-weight:600;font-size:14.5px;flex:none}
+.gloss{font-size:12.5px;color:var(--ink-3);flex:none;font-style:italic}
+.peek{font-family:var(--mono);font-size:11.5px;color:var(--ink-3);
+  flex:1 1 200px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.by{font-size:10.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--nai);background:var(--nai-soft);padding:2px 7px;flex:none}
+details.row.ce .by{color:var(--ce);background:var(--ce-soft)}
+details.row[open] > summary{border-bottom:1px solid var(--rule)}
+details.row[open] .peek{visibility:hidden}
+.body{padding:15px}
+
+pre{font-family:var(--mono);font-size:12px;line-height:1.6;white-space:pre-wrap;
+  word-break:break-word;overflow-wrap:anywhere;background:var(--paper);
+  border:1px solid var(--rule);padding:12px 14px;margin:0 0 14px}
+pre .lb{color:var(--nai);font-weight:500}
+.from{margin:0;font-size:13.5px;color:var(--ink-2)}
+.from + .from{margin-top:9px}
+.howto{margin:13px 0 0;padding:11px 13px;background:var(--ce-soft);
+  border-left:3px solid var(--ce);font-size:13px;color:var(--ink-2)}
+details.row:not(.ce) .howto{background:var(--nai-soft);border-left-color:var(--nai)}
+.howto b{color:var(--ce);font-weight:700;display:block;font-size:10.5px;
+  letter-spacing:.14em;text-transform:uppercase;margin-bottom:6px}
+details.row:not(.ce) .howto b{color:var(--nai)}
+.howto .yes,.howto .no{font-family:var(--mono);font-size:12px;display:block;margin-top:5px}
+.howto .yes::before{content:"write  ";color:var(--ce);font-family:var(--sans);
+  font-weight:700;font-size:10px;letter-spacing:.12em}
+.howto .no::before{content:"not  ";color:var(--ink-3);font-family:var(--sans);
+  font-weight:700;font-size:10px;letter-spacing:.12em}
+.howto .no{color:var(--ink-3);text-decoration:line-through;
+  text-decoration-color:var(--ink-3);text-decoration-thickness:1px}
+
+table.fmt{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}
+table.fmt th{font-weight:700;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--ink-3);text-align:left;padding:0 14px 8px 0;border-bottom:1px solid var(--rule)}
+table.fmt td{padding:12px 14px 12px 0;border-bottom:1px solid var(--rule);vertical-align:top}
+table.fmt td:first-child{font-weight:600;white-space:nowrap}
+table.fmt code{font-family:var(--mono);font-size:11.5px;background:var(--paper);padding:1px 5px}
+table.fmt .g{font-family:var(--mono);font-size:11.5px;color:var(--ce);display:block}
+table.fmt .b{font-family:var(--mono);font-size:11.5px;color:var(--ink-3);display:block;
+  margin-top:3px;text-decoration:line-through;text-decoration-thickness:1px}
+@media (max-width:620px){
+  table.fmt td:first-child{white-space:normal}
+  table.fmt th:nth-child(2),table.fmt td:nth-child(2){display:none}
+}
+.from b{color:var(--ink);font-weight:600}
+.where{display:inline-block;font-family:var(--mono);font-size:11.5px;
+  background:var(--ce-soft);color:var(--ce);padding:1px 6px}
+details.row:not(.ce) .where{background:var(--nai-soft);color:var(--nai)}
+
+details.sub-d{margin-top:14px;border-top:1px solid var(--rule);padding-top:12px}
+details.sub-d > summary{cursor:pointer;list-style:none;font-weight:600;font-size:12px;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--ce)}
+details.sub-d > summary::-webkit-details-marker{display:none}
+details.sub-d > summary::before{content:"▸ ";}
+details.sub-d[open] > summary::before{content:"▾ ";}
+details.sub-d > summary:focus-visible{outline:2px solid var(--ce);outline-offset:2px}
+dl{margin:12px 0 0}
+dt{font-family:var(--mono);font-size:12px;color:var(--ink);background:var(--paper);
+  border-left:2px solid var(--ce);padding:6px 10px;margin-top:10px}
+dd{margin:5px 0 0 0;padding:0 0 0 12px;font-size:13px;color:var(--ink-2)}
+
+.final{margin-top:64px}
+.final h2{font-weight:700;font-size:clamp(22px,4vw,30px);letter-spacing:-.01em;margin:0 0 6px}
+.final p.sub{color:var(--ink-2);font-size:14px;margin:0 0 18px;max-width:62ch}
+pre.full{background:var(--card);font-size:11.8px;padding:20px 18px;max-height:none}
+
+footer{margin-top:56px;padding-top:18px;border-top:2px solid var(--ink);
+  font-size:12px;letter-spacing:.04em;color:var(--ink-3);display:flex;flex-wrap:wrap;gap:6px 22px}
+
+@media (max-width:620px){
+  .wrap{padding:0 16px 70px}
+  .peek{display:none}
+  details.row > summary{gap:10px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="mast">
+  <p class="eyebrow">Character Engine · reader's guide</p>
+  <h1>What the model actually reads before it writes</h1>
+  <p class="thesis">Everything you type into Character Engine ends up somewhere in the text the model is handed. This page shows where. <b>Open a row to see the real thing</b> — the exact wording the engine produces, which screen you filled in to produce it, and how to write the field so it reads properly once it gets there. Many fields are dropped into the middle of a sentence the engine builds around them, so the form you write in matters. There is a summary of every one of those at the bottom, above the full example.</p>
+  <div class="key">
+    <span><i class="dot"></i> NovelAI puts this here</span>
+    <span><i class="dot ce"></i> Character Engine writes this</span>
+  </div>
+  <div class="tools">
+    <button id="ex">Open all</button>
+    <button id="co">Close all</button>
+  </div>
+</header>
+
+<!-- ============================================================ -->
+<div class="act">
+  <h2>1 · Before anything else</h2>
+  <p class="sub">Standing instructions and world canon. These do not change from turn to turn.</p>
+
+  <details class="row">
+    <summary><span class="name">System prompt</span><span class="gloss">NovelAI's standing instructions</span>
+      <span class="peek">You are a writing model. Continue the story…</span>
+      <span class="by">NovelAI</span></summary>
+    <div class="body">
+      <pre>You are a writing model. Continue the story in the established voice, in
+third person past tense. Do not summarise and do not end the scene.</pre>
+      <p class="from"><b>Where it comes from.</b> NovelAI, plus whatever you have set in your own story settings. Character Engine never touches it.</p>
+      <p class="from"><b>When it changes.</b> Only when you change it.</p>
+    </div>
+  </details>
+
+  <details class="row ce">
+    <summary><span class="name">Memory</span><span class="gloss">world canon, written once</span>
+      <span class="peek">Kesswater sits where the river Ash meets the sea road…</span>
+      <span class="by">You, via the Wizard</span></summary>
+    <div class="body">
+      <pre>Kesswater sits where the river Ash meets the sea road. The River Guild
+prices every barge that touches the water. Nothing in this story is magic;
+everything in it is money.</pre>
+      <p class="from"><b>Where it comes from.</b> <span class="where">Wizard</span> When you finish the story wizard, the sections you marked as world canon are written straight into NovelAI's Memory field. You can edit it there afterwards like any other memory.</p>
+      <p class="from"><b>When it changes.</b> Once, when you run or re-run the wizard. Nothing else writes here — the engine deliberately keeps its per-turn material out of Memory so your canon stays yours.</p>
+    </div>
+  </details>
+</div>
+
+<!-- ============================================================ -->
+<div class="act">
+  <h2>2 · The reference shelf</h2>
+  <p class="sub">Lorebook entries. Some are always on; the rest switch on when their subject is named or is in the room. NovelAI decides the order inside this block, with one exception — the engine forces the cast list to sit last, because it is the part that changes most often and the model weights recent text more heavily.</p>
+
+  <details class="row ce">
+    <summary><span class="name">The World</span><span class="gloss">every Location you have made</span>
+      <span class="peek">Kesswater. A river town of eight hundred on both banks…</span>
+      <span class="by">Engine</span></summary>
+    <div class="body">
+      <pre>Places in this world.
+Kesswater. A river town of eight hundred on both banks of the Ash, where
+the sea road crosses.
+The Salt Lantern. A two-storey inn at the bottom of Cooper's Hill, the only
+building in town with glass in every window.
+Common Room. Low-beamed, wide-hearthed, and never quite empty.
+Also in this world: Ash Bridge, the Marrow Fields, and the Guild House.</pre>
+      <p class="from"><b>Where it comes from.</b> <span class="where">Map</span> The <b>description</b> field of every place you have made. A place with a description gets a sentence. A place without one gets its name in the closing list — so describing a place is what earns it room here.</p>
+      <p class="from"><b>What it does not say.</b> Nothing about what is inside what. Where you put a place on the map is a layout choice, and the engine will not turn a layout choice into a claim about the world. If a place sits inside another one and that matters, write it in the description.</p>
+      <p class="from"><b>When it changes.</b> Whenever you add, rename, describe or delete a place. Always on.</p>
+      <div class="howto"><b>How to write the description</b>
+        Your text is placed after the name and a full stop, so it should read as the rest of a paragraph about that place — not as a heading or a label.
+        <span class="yes">A river town of eight hundred on both banks of the Ash.</span>
+        <span class="no">Town. Population 800. On the Ash.</span></div>
+    </div>
+  </details>
+
+  <details class="row ce">
+    <summary><span class="name">Dramatis Personae</span><span class="gloss">the cast list</span>
+      <span class="peek">Wren Halloway, the protagonist — back to settle a dead man's…</span>
+      <span class="by">Engine</span></summary>
+    <div class="body">
+      <pre>The people of this story:
+Wren Halloway, the protagonist — back to settle a dead man's accounts (The Salt Lantern)
+Ottis Vane
+Sabra Quill
+Deakon Ash — keeps the north levee and knows who cut the ledger pages (Marrow Fields)</pre>
+      <p class="from"><b>Where it comes from.</b> <span class="where">Profile</span> Each character's short description, plus wherever they are standing on the map.</p>
+      <p class="from"><b>Why some are just a name.</b> Ottis and Sabra are in the room. Their full profiles are already further up this shelf, so repeating the description would say it twice. Anyone off-camera keeps their one-line summary and their location, because that may be all the model ever sees of them.</p>
+      <p class="from"><b>When it changes.</b> Every time anyone moves, is added, or is removed. Always on, and always placed last in the shelf.</p>
+      <div class="howto"><b>How to write the short description</b>
+        It is dropped into the middle of a line — after a dash, before the location in brackets — so a fragment fits and a sentence does not. No capital, no full stop.
+        <span class="yes">keeps the north levee and knows who cut the ledger pages</span>
+        <span class="no">Deakon keeps the north levee.</span></div>
+    </div>
+  </details>
+
+  <details class="row ce">
+    <summary><span class="name">Journal</span><span class="gloss">your own notes</span>
+      <span class="peek">Wren came back to Kesswater in the autumn…</span>
+      <span class="by">Engine</span></summary>
+    <div class="body">
+      <pre>The story so far:
+
+Wren came back to Kesswater in the autumn to settle her father's accounts
+and found the Guild had raised the winter toll without a vote.
+
+Ottis Vane put her up at the Salt Lantern and has not asked for money since.
+Sabra Quill arrived three days ago carrying a letter nobody will admit to
+sending.</pre>
+      <p class="from"><b>Where it comes from.</b> <span class="where">Journal</span> Your own notes, in the order you wrote them. Each note is a paragraph.</p>
+      <p class="from"><b>When it changes.</b> The moment you add, edit or archive a note. Archived notes move to a second entry that is switched off — they stay recoverable without costing you space.</p>
+      <p class="from"><b>Housekeeping.</b> This grows forever unless you prune it. <b>Merge down</b> folds your notes into one, and the rewrite and compress tools shorten a note without losing its facts.</p>
+      <div class="howto"><b>Past tense, and finished</b>
+        Nothing is added around your notes, so they read exactly as typed under the heading <span style="font-family:var(--mono);font-size:12px">The story so far:</span>. Recap voice keeps them from being mistaken for the current moment.
+        <span class="yes">Ottis put her up at the Salt Lantern and has not asked for money since.</span>
+        <span class="no">Ottis is putting her up and might want something.</span></div>
+    </div>
+  </details>
+
+  <details class="row ce">
+    <summary><span class="name">Character</span><span class="gloss">one person's dossier</span>
+      <span class="peek">Ottis Vane — human man, 54, innkeeper…</span>
+      <span class="by">Engine</span></summary>
+    <div class="body">
+      <pre>Ottis Vane — human man, 54, innkeeper
+Physical Description: Broad through the shoulders and gone soft over them.
+Grey at the temples, forearms like a man who still lifts his own barrels.
+Personality Core: He would rather be owed than owe, and would rather neither.
+Voice &amp; Mannerisms: Speaks slowly and finishes his sentences even when
+interrupted. Wipes the bar when he is thinking.
+Background: Took the Salt Lantern from his mother at twenty-six and has not
+slept anywhere else since. Sat on the Guild's small council for six years
+and left without saying why.
+Core Values: Discretion, a debt settled quietly
+Presence: Fills a doorway without meaning to. Always in shirtsleeves.
+Signature detail: A burn scar across three knuckles of his left hand, from
+a lamp he caught before it fell.
+Core: He will not be the man who let Kesswater's last free inn go to the Guild.
+Pursuit: He is trying to keep the Lantern open through a winter he has
+already been told he cannot afford.
+Resistance · Want / Need: He wants to be asked for help rather than to offer
+it, so he waits, and the waiting costs him the season.
+Conduct · Want / Need: He extends credit without mentioning it and lets the
+ledger speak later. When someone thanks him he changes the subject.
+
+Ottis Vane is wearing/carrying a brass tap key (Worn smooth; opens every
+cask in the cellar and the cellar door itself), an apron (Canvas, bleached
+pale, pockets sagging).
+Ottis Vane is uneasy.
+Ottis Vane on Wren Halloway — creditor and debtor. He has carried her tab
+since midsummer and has never once mentioned it. Something has been
+building on his side and it is close to being said.
+Ottis Vane's own notes: She has not asked what I want. Good. I do not know yet.</pre>
+      <p class="from"><b>Where it comes from.</b> <span class="where">Profile</span> Everything above the blank line is the profile you filled in — identity, the four long fields, and whichever detail slots you answered. Leave a slot blank and it simply is not there; there are no empty headings.</p>
+      <p class="from"><b>Everything below the blank line is rebuilt from scratch every single turn.</b> That is why equipping an item takes effect immediately with nothing to save or sync.</p>
+      <p class="from"><b>When it appears.</b> Anyone in the room gets their entry switched on whether or not their name comes up. Anyone else appears the normal way, when something in the text matches their name or a nickname.</p>
+
+      <details class="sub-d">
+        <summary>The four lines added fresh each turn</summary>
+        <dl>
+          <dt>Ottis Vane is wearing/carrying …</dt>
+          <dd>Everything equipped, each with its own description in brackets. <span class="where">Profile › Carried</span>
+            <div class="howto"><b>How to write an item's description</b>
+              It goes inside the brackets after the item's name, so write the detail only — never repeat the name.
+              <span class="yes">Worn smooth; opens every cask in the cellar</span>
+              <span class="no">A brass tap key that is worn smooth.</span></div></dd>
+
+          <dt>Ottis Vane is uneasy.</dt>
+          <dd>A <b>state</b> that has moved off its resting level — health, stamina, soul, a condition. A state sitting at rest says nothing at all, so this line only appears when something has actually happened to him. <span class="where">Profile › States · Settings › States</span>
+            <div class="howto"><b>How to write a band label</b>
+              The character's name is put in front of your label and a full stop after it, so write the middle of the sentence: a verb phrase, no name, no pronoun, no full stop.
+              <span class="yes">is uneasy</span>
+              <span class="no">Uneasy.</span>
+              <span class="no">He is uneasy.</span></div></dd>
+
+          <dt>Ottis Vane on Wren Halloway — …</dt>
+          <dd>His private reading of one other person: what they are to each other, where they stand, and whether anything is building. It only appears when <b>both</b> of them are in the scene. Two characters can each hold a reading of the other, and the two are allowed to disagree. The last clause about something building is written by the engine from how much pressure has gathered — you do not write that part. <span class="where">Profile › Position</span>
+            <div class="howto"><b>How to write the two halves</b>
+              <b style="display:inline;text-transform:none;letter-spacing:0;font-size:13px">Shape</b> lands after a dash and gets its own full stop, so write a naming phrase with no verb and no punctuation.
+              <span class="yes">creditor and debtor</span>
+              <span class="no">They are creditor and debtor.</span>
+              <b style="display:inline;text-transform:none;letter-spacing:0;font-size:13px;margin-top:8px">Standing</b> follows as its own sentence, so write it as one, with its full stop.
+              <span class="yes">He has carried her tab since midsummer and never mentioned it.</span></div></dd>
+
+          <dt>Ottis Vane's own notes: …</dt>
+          <dd>His own journal, in his own voice. Separate from your story journal. <span class="where">Profile › Journal</span></dd>
+        </dl>
+        <p class="from" style="margin-top:14px"><b>A fifth line, for people who are not here.</b> If Deakon Ash's name comes up while he is off somewhere else, his entry adds <span style="font-family:var(--mono);font-size:12px">Deakon Ash is walking the north levee.</span> from his timetable. Anyone on camera is skipped — the story is already showing what they are doing, so a guess from the timetable would only contradict it. <span class="where">Profile › Schedule</span></p>
+        <div class="howto"><b>How to write a timetable entry</b>
+          This one is used in two places at once — here after <span style="font-family:var(--mono)">is</span>, and in Scene State straight after the person's name. A bare <b>-ing</b> phrase is the form that works in both. Do not start it with a verb like <span style="font-family:var(--mono)">is</span> or <span style="font-family:var(--mono)">draws</span>.
+          <span class="yes">walking the north levee</span>
+          <span class="no">is walking the north levee</span>
+          <span class="no">He walks the north levee.</span></div>
+      </details>
+    </div>
+  </details>
+
+  <details class="row ce">
+    <summary><span class="name">Location</span><span class="gloss">one place's dossier</span>
+      <span class="peek">Common Room is a room inside The Salt Lantern.</span>
+      <span class="by">Engine</span></summary>
+    <div class="body">
+      <pre>Common Room is a room inside The Salt Lantern.
+Constrains: One door to the yard, one stair. Everything said at the bar is
+heard on the landing.
+Light &amp; sound: Firelight and rain on the shutters. Voices carry.
+Furnishing &amp; contents: Eight tables, a long bar, and a settle by the hearth
+that is understood to be Ottis's.</pre>
+      <p class="from"><b>Where it comes from.</b> <span class="where">Map › Profile</span> The detail questions you answered about the place. Its plain description is not repeated here — that is already in <b>Places in this world</b> further up, and saying it twice would waste the space.</p>
+      <p class="from"><b>When it appears.</b> The room you are standing in is always on. Other places appear when named.</p>
+      <p class="from"><b>Why nesting is worth it.</b> Forty rooms in one town do not each need to carry the town's weather. The town's own entry is on whenever you are inside it and says it once.</p>
+      <div class="howto"><b>The opening line is written for you</b>
+        <span style="font-family:var(--mono);font-size:12px">Common Room is a room inside The Salt Lantern.</span> is built from the name, the <b>What it is</b> field, and where it sits on the map. So <b>What it is</b> takes a bare noun — the word the story would use — and everything after it is your own sentences.
+        <span class="yes">room</span>
+        <span class="no">It is a room.</span></div>
+    </div>
+  </details>
+
+  <details class="row ce">
+    <summary><span class="name">Faction</span><span class="gloss">an organisation with interests</span>
+      <span class="peek">Wants: Sole right to price every barge that touches the Ash.</span>
+      <span class="by">Engine</span></summary>
+    <div class="body">
+      <pre>The River Guild
+Wants: Sole right to price every barge that touches the Ash.
+Holds: The tollhouse, the bridge weights, and four of the seven votes.
+Method: Nothing is ever refused. It is only delayed until the season turns.
+Answers to: The sea-road charter, in theory. Nobody has read it in a decade.
+Reputation: Respectable to anyone who has never needed a favour.</pre>
+      <p class="from"><b>Where it comes from.</b> <span class="where">Diplomacy</span> The questions on a faction's profile. Standings — who is warm or cold toward this group — are not listed here; they live on each character instead, and show up in their own entries.</p>
+      <p class="from"><b>When it appears.</b> When the faction is named in the story.</p>
+      <div class="howto"><b>Name it yourself in the first answer</b>
+        Unlike a Character or a Location, a Faction's entry has no automatic opening line — the name you gave it is the lorebook's label and is not part of the injected text. So work the name into <b>Wants</b>, or the model reads a page of answers with no subject.
+        <span class="yes">Wants: The River Guild wants sole right to price every barge on the Ash.</span>
+        <span class="no">Wants: Sole right to price every barge on the Ash.</span></div>
+    </div>
+  </details>
+
+  <details class="row ce">
+    <summary><span class="name">Species</span><span class="gloss">a people, shared across characters</span>
+      <span class="peek">Vellin — River-born, and it shows…</span>
+      <span class="by">Engine</span></summary>
+    <div class="body">
+      <pre>Vellin
+River-born, and it shows: webbing between the fingers, and a flat refusal to
+swear an oath on dry land.</pre>
+      <p class="from"><b>Where it comes from.</b> <span class="where">Settings › World</span> A species or people you have defined, so you do not have to restate the same physiology on every character who shares it.</p>
+      <p class="from"><b>When it appears.</b> When the name is used.</p>
+      <div class="howto"><b>The name leads, then your description</b>
+        The species name is printed on its own line and your description follows underneath. Write it as prose about the people, not as a stat block.
+        <span class="yes">River-born, and it shows: webbing between the fingers…</span>
+        <span class="no">Traits: aquatic. Lifespan: 90.</span></div>
+    </div>
+  </details>
+
+  <details class="row ce">
+    <summary><span class="name">Narrative thread</span><span class="gloss">a running storyline</span>
+      <span class="peek">Objective: Get the winter toll struck before the barges ice in.</span>
+      <span class="by">Engine</span></summary>
+    <div class="body">
+      <pre>Objective: Get the winter toll struck before the barges ice in.
+Opposition: The Guild does not have to refuse. It only has to wait until
+the river closes.
+Cost: Every day of delay is another day on Ottis's credit.
+Consequence: If the toll stands, half the small holders sell out by spring.</pre>
+      <p class="from"><b>Where it comes from.</b> <span class="where">Threads</span> The shape of a running storyline: what is wanted, what is in the way, what it costs, and what happens if it fails.</p>
+      <p class="from"><b>Not the same as the objective line lower down.</b> This entry is the thread's <b>logic</b> and appears when the thread is named. The <b>objective</b> line in Scene State is what should happen <b>next</b>, and it is there on every turn. One is the map; the other is the next step.</p>
+      <div class="howto"><b>How to write the answers</b>
+        Each answer is printed after its own label and nothing else is added, so write complete sentences with their own punctuation. As with a Faction, nothing names the thread for you — put the people and places into the sentences.
+        <span class="yes">Opposition: The Guild does not have to refuse. It only has to wait until the river closes.</span>
+        <span class="no">Opposition: waiting</span></div>
+    </div>
+  </details>
+
+  <details class="row ce">
+    <summary><span class="name">Item</span><span class="gloss">an object with its own record</span>
+      <span class="peek">The cut ledger — Wren's father's book, with eleven pages…</span>
+      <span class="by">Engine</span></summary>
+    <div class="body">
+      <pre>The cut ledger
+Wren's father's book, with eleven pages taken out at the spine. The
+remaining entries are in two different hands.</pre>
+      <p class="from"><b>Where it comes from.</b> <span class="where">Map › Items</span> An object with its own record, for things that carry weight in the story.</p>
+      <p class="from"><b>When it appears.</b> When it is named. If someone is <b>carrying</b> it, a short version already rides along in their entry — so an item worth its own record is usually one with more to say than a carried description can hold. If it belongs to someone, a line saying so is added for you.</p>
+      <div class="howto"><b>Open with what it is</b>
+        An Item's entry has no automatic opening line either. Lead with a sentence that names it and says what it is.
+        <span class="yes">The cut ledger is Wren's father's account book, eleven pages lighter than it should be.</span>
+        <span class="no">Eleven pages taken out at the spine.</span></div>
+    </div>
+  </details>
+</div>
+
+<!-- ============================================================ -->
+<div class="act">
+  <h2>3 · Your story</h2>
+  <p class="sub">The prose itself, exactly as written.</p>
+
+  <details class="row">
+    <summary><span class="name">Story text</span><span class="gloss">your document</span>
+      <span class="peek">The rain had set in at noon and had not eased…</span>
+      <span class="by">NovelAI</span></summary>
+    <div class="body">
+      <pre>The rain had set in at noon and had not eased, and the common room had
+filled the way it always did on a wet afternoon — slowly, and with people
+who had somewhere else to be.
+
+Wren had the ledger open on the table in front of her and had not turned a
+page in twenty minutes.</pre>
+      <p class="from"><b>Where it comes from.</b> Your document, unchanged. NovelAI trims from the top when the context fills up, oldest first.</p>
+      <p class="from"><b>The engine writes nothing here.</b> Anything it needs to say goes below, closer to where the model starts writing.</p>
+    </div>
+  </details>
+</div>
+
+<!-- ============================================================ -->
+<div class="act">
+  <h2>4 · Right before the model writes</h2>
+  <p class="sub">The last thing the model reads is the thing it weighs most. Everything the engine knows about <em>this moment</em> lands here rather than up on the shelf.</p>
+
+  <details class="row ce">
+    <summary><span class="name">Scene State</span><span class="gloss">the Author's Note block</span>
+      <span class="peek">[ Scene State ] The Guild's factor is at the bar…</span>
+      <span class="by">Engine</span></summary>
+    <div class="body">
+      <pre>[ Scene State ]
+The Guild's factor is at the bar and will not be here tomorrow. The shape of
+a deal is on the table and what is left is price. The Guild House is 10m away.
+
+The Guild's quarterly vote is today.
+
+It is late afternoon.
+Wren Halloway is in Common Room. Rain on the shutters, the fire banked low,
+the room smelling of wet wool.
+
+Ottis Vane is drawing the evening's first cask. Sabra Quill is present.
+
+Ottis Vane — thinking: the toll will close him by spring if it stands. He
+means to let Wren do the talking and keep the cups filled.
+Sabra Quill — thinking: she has read the letter she is carrying. She is
+looking for a reason not to hand it over.
+
+Ottis Vane &amp; Sabra Quill — twenty years of trusting each other with letters
+and nothing else.
+
+Sabra Quill: the sealed letter is addressed to the Guildmaster and she has
+not decided whether to deliver it. She is running out of afternoon.</pre>
+      <p class="from"><b>Where it comes from.</b> Assembled fresh every turn from seven sources, in the order below. Any one of them with nothing to say is left out entirely rather than printed empty.</p>
+      <p class="from"><b>It goes in the Author's Note, under a heading of its own.</b> If you have written your own author's note, it stays above this and is never touched or overwritten.</p>
+
+      <details class="sub-d">
+        <summary>The seven parts, in order</summary>
+        <dl>
+          <dt>The objective, and where the encounter stands</dt>
+          <dd>Two facts in one paragraph. <b>The Guild's factor is at the bar…</b> is what you wrote when you started this encounter, and it never moves. <b>The shape of a deal is on the table…</b> is where the encounter's track currently sits, and it moves every time you roll. The last clause is how far away the thing you are aiming at is, and the engine writes that one. <span class="where">Threads · Actions · Settings › States</span>
+            <div class="howto"><b>Both halves are their own sentence</b>
+              Write the objective as one plain sentence about what should happen next. Encounter band labels are also full sentences — present tense, stated as fact, because a fact is continued where an instruction is argued with.
+              <span class="yes">The shape of a deal is on the table and what is left is price</span>
+              <span class="no">Try not to close the deal yet</span></div></dd>
+
+          <dt>Today's date</dt>
+          <dd>Anything you put on the calendar for this exact day. Several notes on the same day are joined into one line. <span class="where">Settings › Time</span>
+            <div class="howto"><b>A statement, not a reminder</b>
+              Nothing is added around it, so write what is true today rather than an instruction about it.
+              <span class="yes">The Guild's quarterly vote is today.</span>
+              <span class="no">Remember: vote day!</span></div></dd>
+
+          <dt>Time and place</dt>
+          <dd>The hour as a phrase rather than a clock reading, then where you are, then how the room is right now. That last sentence is the room's <b>atmosphere for this hour</b> — the same room reads differently at dawn. If you have not written any atmosphere, its plain description stands in. Turn the clock off and the time line disappears on its own. <span class="where">Map › Atmosphere · Settings › Time</span>
+            <div class="howto"><b>Atmosphere follows a finished sentence</b>
+              It is appended after <span style="font-family:var(--mono);font-size:12px">Wren Halloway is in Common Room.</span> so it must stand on its own, with its own punctuation. Time bands are the opposite — they are dropped into <span style="font-family:var(--mono);font-size:12px">It is …</span> so they take a bare phrase.
+              <span class="yes">Rain on the shutters, the fire banked low.</span> &nbsp;<span style="font-size:11px;color:var(--ink-3)">— atmosphere</span>
+              <span class="yes">late afternoon</span> &nbsp;<span style="font-size:11px;color:var(--ink-3)">— time band</span>
+              <span class="no">It is late afternoon.</span> &nbsp;<span style="font-size:11px;color:var(--ink-3)">— time band</span></div></dd>
+
+          <dt>Who is here</dt>
+          <dd>Anyone with something on their timetable gets a sentence saying what they are doing; everyone else is named in one list. Deliberately written as prose rather than a labelled roster — a heading in the context teaches the model to write headings back at you. Uses the same timetable text as the Character fold, so the <b>-ing</b> form serves both. <span class="where">Map · Profile › Schedule</span></dd>
+
+          <dt>What they are thinking</dt>
+          <dd>One line per person in the room: their current read on what is happening, and what they mean to do about it. <b>You do not write these</b> — the engine generates them from the profile and refreshes them on the interval you set. What shapes them is what you put in <b>Core</b>, <b>Pursuit</b> and the Resistance and Conduct slots. <span class="where">generated · Settings › Dynamics</span></dd>
+
+          <dt>What is between them</dt>
+          <dd>How two <b>other</b> people stand with each other, when both are present. Distinct from the Position line in a Character entry, which is one person's private view. This one is the shared history. <span class="where">Profile › Web</span>
+            <div class="howto"><b>A phrase, after a dash</b>
+              It follows <span style="font-family:var(--mono);font-size:12px">Ottis Vane &amp; Sabra Quill —</span> with nothing added, so write a phrase rather than a sentence about them.
+              <span class="yes">twenty years of trusting each other with letters and nothing else</span>
+              <span class="no">They have known each other twenty years.</span></div></dd>
+
+          <dt>What is pressing</dt>
+          <dd>A hook that has climbed high enough to demand attention, and how close it is to forcing itself. Low-level hooks stay quiet and colour the thinking lines instead. Placed last, nearest the writing. The urgency clause is added by the engine from the hook's level. <span class="where">Profile › Hooks</span>
+            <div class="howto"><b>After the name and a colon</b>
+              Write the pressure itself, not who is under it — the name is already there.
+              <span class="yes">the sealed letter is addressed to the Guildmaster and she has not decided whether to deliver it</span>
+              <span class="no">Sabra has a letter she has not delivered.</span></div></dd>
+        </dl>
+      </details>
+    </div>
+  </details>
+
+  <details class="row ce">
+    <summary><span class="name">Directive</span><span class="gloss">one instruction, when something fires</span>
+      <span class="peek">A deal is plausible now and both sides can feel it…</span>
+      <span class="by">Engine</span></summary>
+    <div class="body">
+      <pre>The Guild's factor is at the bar and will not be here tomorrow. The shape of
+a deal is on the table and what is left is price.
+A deal is plausible now and both sides can feel it. Move them off positions
+and onto terms — numbers, timing, who goes first. Do not let them agree yet.</pre>
+      <p class="from"><b>Where it comes from.</b> <span class="where">Actions</span> Something crossed a line this turn. A roll pushed the encounter into a new band; a state bottomed out; you queued a note. When that happens, the engine has one sentence it needs the model to act on, and this is how it delivers it.</p>
+      <p class="from"><b>It arrives as if you had typed it.</b> Not as a bracketed instruction — a bracket turns a storyteller into an assistant. Plain text, in your voice, as the last thing before the model begins.</p>
+      <p class="from"><b>Why the first line repeats the Scene State.</b> On purpose. The Scene State sits thousands of words above this point; what actually paces a scene is the model reading the situation <b>last</b>.</p>
+      <p class="from"><b>When it appears.</b> Only when something armed it. Most turns have no Directive at all, and that is the normal case.</p>
+    </div>
+  </details>
+
+  <details class="row">
+    <summary><span class="name">Generation point</span><span class="gloss">where writing begins</span>
+      <span class="peek">— where the model starts writing</span>
+      <span class="by">NovelAI</span></summary>
+    <div class="body">
+      <pre>&lt;|assistant|&gt;</pre>
+      <p class="from"><b>Where it comes from.</b> NovelAI leaves an empty turn at the end. Everything above is arranged with respect to this line: the further from it, the less weight it carries.</p>
+      <p class="from"><b>That is the whole reason for the layout.</b> Slow-changing reference at the top, this moment at the bottom.</p>
+    </div>
+  </details>
+</div>
+
+<!-- ============================================================ -->
+
+<div class="act" id="fmt">
+  <h2>5 · Fields that land inside a sentence</h2>
+  <p class="sub">Most of what you write is printed as-is. These are the exceptions: the engine builds a sentence around them, so writing a complete sentence where a fragment belongs produces doubled words or stray full stops. This is every one of them in one place.</p>
+  <table class="fmt">
+    <tr><th>Field</th><th>Becomes</th><th>Write it like this</th></tr>
+
+    <tr><td>State band label<span class="where">Settings › States</span></td>
+      <td><code>Name</code> + your text + <code>.</code></td>
+      <td><span class="g">is uneasy</span><span class="b">He is uneasy.</span></td></tr>
+
+    <tr><td>Timetable entry<span class="where">Profile › Schedule</span></td>
+      <td><code>Name is</code> + your text + <code>.</code><br>and <code>Name</code> + your text + <code>.</code></td>
+      <td><span class="g">walking the north levee</span><span class="b">is walking the north levee</span></td></tr>
+
+    <tr><td>Carried item detail<span class="where">Map › Items</span></td>
+      <td><code>item name (</code> + your text + <code>)</code></td>
+      <td><span class="g">Worn smooth; opens every cask</span><span class="b">A brass key, worn smooth.</span></td></tr>
+
+    <tr><td>Position — shape<span class="where">Profile › Position</span></td>
+      <td><code>Name on Target —</code> + your text + <code>.</code></td>
+      <td><span class="g">creditor and debtor</span><span class="b">They are creditor and debtor.</span></td></tr>
+
+    <tr><td>Position — standing<span class="where">Profile › Position</span></td>
+      <td>appended as its own sentence</td>
+      <td><span class="g">He has carried her tab since midsummer.</span></td></tr>
+
+    <tr><td>Between them<span class="where">Profile › Web</span></td>
+      <td><code>A &amp; B —</code> + your text</td>
+      <td><span class="g">twenty years of trusting each other with letters</span><span class="b">They trust each other.</span></td></tr>
+
+    <tr><td>Hook<span class="where">Profile › Hooks</span></td>
+      <td><code>Name:</code> + your text</td>
+      <td><span class="g">the letter is addressed to the Guildmaster</span><span class="b">Sabra has a letter.</span></td></tr>
+
+    <tr><td>Short description<span class="where">Profile</span></td>
+      <td><code>Name —</code> + your text + <code>(Where)</code></td>
+      <td><span class="g">keeps the north levee</span><span class="b">Deakon keeps the north levee.</span></td></tr>
+
+    <tr><td>Time band<span class="where">Settings › Time</span></td>
+      <td><code>It is</code> + your text + <code>.</code></td>
+      <td><span class="g">late afternoon</span><span class="b">It is late afternoon.</span></td></tr>
+
+    <tr><td>Atmosphere<span class="where">Map › Atmosphere</span></td>
+      <td>appended as its own sentence</td>
+      <td><span class="g">Rain on the shutters, the fire banked low.</span></td></tr>
+
+    <tr><td>What it is<span class="where">Map › Profile</span></td>
+      <td><code>Name is a</code> + your text + <code>inside Parent.</code></td>
+      <td><span class="g">room</span><span class="b">It is a room.</span></td></tr>
+
+    <tr><td>Place description<span class="where">Map › Profile</span></td>
+      <td><code>Name.</code> + your text</td>
+      <td><span class="g">A river town of eight hundred on the Ash.</span></td></tr>
+  </table>
+
+  <p class="sub" style="margin-top:22px"><b>One more rule, for the three record types that do not name themselves.</b> A Character opens with its identity line and a Location opens with what it is and where — both written for you. A <b>Faction</b>, a <b>Narrative thread</b> and an <b>Item</b> have no such line: the name you gave them is the lorebook's label, not part of the text the model reads. Put the name into your first answer, or the model gets a page of answers about nobody in particular.</p>
+</div>
+
+<!-- ============================================================ -->
+<div class="final">
+  <h2>6 · The whole thing, in order</h2>
+  <p class="sub">The same example with the annotations stripped out — one continuous read, top to bottom, exactly as the model receives it.</p>
+  <pre class="full"><span class="lb">&lt;|system|&gt;</span>
+You are a writing model. Continue the story in the established voice, in third
+person past tense. Do not summarise and do not end the scene.
+
+<span class="lb">&lt;|user|&gt;</span>
+Relevant persistent information:
+
+Kesswater sits where the river Ash meets the sea road. The River Guild prices
+every barge that touches the water. Nothing in this story is magic; everything
+in it is money.
+
+Places in this world.
+Kesswater. A river town of eight hundred on both banks of the Ash, where the
+sea road crosses.
+The Salt Lantern. A two-storey inn at the bottom of Cooper's Hill, the only
+building in town with glass in every window.
+Common Room. Low-beamed, wide-hearthed, and never quite empty.
+Also in this world: Ash Bridge, the Marrow Fields, and the Guild House.
+
+The story so far:
+
+Wren came back to Kesswater in the autumn to settle her father's accounts and
+found the Guild had raised the winter toll without a vote.
+
+Ottis Vane put her up at the Salt Lantern and has not asked for money since.
+Sabra Quill arrived three days ago carrying a letter nobody will admit to sending.
+
+Wren Halloway — human woman, 31, factor's daughter
+Physical Description: Tall, weather-browned to the wrists and pale above them.
+Wears her father's coat, which does not fit and has not been altered.
+Personality Core: She would rather be owed an explanation than an apology.
+Voice &amp; Mannerisms: Asks questions she already knows the answer to, and waits.
+Background: Left Kesswater at nineteen for a factor's desk upriver and came
+back at thirty-one with the desk's habits and none of its authority.
+Core: She will not sell what her father spent his life refusing to sell.
+Pursuit: She is trying to find out who cut eleven pages from the ledger before
+the Guild's vote closes the question for good.
+Immediate errand: She needs the Guild's factor to name a number in front of a
+witness.
+
+Wren Halloway is wearing/carrying an oilcloth coat (Long enough to sit on;
+smells permanently of the Ash), the cut ledger (Water-stained, and eleven
+pages lighter than it should be).
+Wren Halloway is flagging.
+
+Ottis Vane — human man, 54, innkeeper
+Physical Description: Broad through the shoulders and gone soft over them.
+Grey at the temples, forearms like a man who still lifts his own barrels.
+Personality Core: He would rather be owed than owe, and would rather neither.
+Voice &amp; Mannerisms: Speaks slowly and finishes his sentences even when
+interrupted. Wipes the bar when he is thinking.
+Background: Took the Salt Lantern from his mother at twenty-six and has not
+slept anywhere else since. Sat on the Guild's small council for six years and
+left without saying why.
+Core Values: Discretion, a debt settled quietly
+Presence: Fills a doorway without meaning to. Always in shirtsleeves.
+Signature detail: A burn scar across three knuckles of his left hand, from a
+lamp he caught before it fell.
+Core: He will not be the man who let Kesswater's last free inn go to the Guild.
+Pursuit: He is trying to keep the Lantern open through a winter he has already
+been told he cannot afford.
+Resistance · Want / Need: He wants to be asked for help rather than to offer
+it, so he waits, and the waiting costs him the season.
+Conduct · Want / Need: He extends credit without mentioning it and lets the
+ledger speak later. When someone thanks him he changes the subject.
+
+Ottis Vane is wearing/carrying a brass tap key (Worn smooth; opens every cask
+in the cellar and the cellar door itself), an apron (Canvas, bleached pale,
+pockets sagging).
+Ottis Vane is uneasy.
+Ottis Vane on Wren Halloway — creditor and debtor. He has carried her tab since
+midsummer and has never once mentioned it. Something has been building on his
+side and it is close to being said.
+Ottis Vane's own notes: She has not asked what I want. Good. I do not know yet.
+
+Sabra Quill — vellin woman, 26, river courier
+Physical Description: Small, quick, and never quite dry. Keeps her hood up
+indoors and her satchel across her body.
+Personality Core: She has never once opened a letter she was paid to carry.
+Background: Runs the Ash from the sea road to the upper locks and back, twice a
+week, in every season anyone has priced.
+Core: She will not become someone whose word has to be checked.
+Pursuit: She is trying to deliver a letter she should not have read.
+
+Sabra Quill is wearing/carrying a courier's satchel (Oiled leather, one strap,
+a brass seal-clasp that is currently closed).
+
+Common Room is a room inside The Salt Lantern.
+Constrains: One door to the yard, one stair. Everything said at the bar is
+heard on the landing.
+Light &amp; sound: Firelight and rain on the shutters. Voices carry.
+Furnishing &amp; contents: Eight tables, a long bar, and a settle by the hearth
+that is understood to be Ottis's.
+
+The River Guild
+Wants: Sole right to price every barge that touches the Ash.
+Holds: The tollhouse, the bridge weights, and four of the seven votes.
+Method: Nothing is ever refused. It is only delayed until the season turns.
+Answers to: The sea-road charter, in theory. Nobody has read it in a decade.
+Reputation: Respectable to anyone who has never needed a favour.
+
+Vellin
+River-born, and it shows: webbing between the fingers, and a flat refusal to
+swear an oath on dry land.
+
+Objective: Get the winter toll struck before the barges ice in.
+Opposition: The Guild does not have to refuse. It only has to wait until the
+river closes.
+Cost: Every day of delay is another day on Ottis's credit.
+Consequence: If the toll stands, half the small holders sell out by spring.
+
+The cut ledger
+Wren's father's book, with eleven pages taken out at the spine. The remaining
+entries are in two different hands.
+
+The people of this story:
+Wren Halloway, the protagonist — back to settle a dead man's accounts (The Salt Lantern)
+Ottis Vane
+Sabra Quill
+Deakon Ash — keeps the north levee and knows who cut the ledger pages (Marrow Fields)
+
+***
+Write.
+
+<span class="lb">&lt;|assistant|&gt;</span>
+The rain had set in at noon and had not eased, and the common room had filled
+the way it always did on a wet afternoon — slowly, and with people who had
+somewhere else to be.
+
+Wren had the ledger open on the table in front of her and had not turned a page
+in twenty minutes.
+
+<span class="lb">&lt;|system|&gt;</span>
+[ Scene State ]
+The Guild's factor is at the bar and will not be here tomorrow. The shape of a
+deal is on the table and what is left is price. The Guild House is 10m away.
+
+The Guild's quarterly vote is today.
+
+It is late afternoon.
+Wren Halloway is in Common Room. Rain on the shutters, the fire banked low, the
+room smelling of wet wool.
+
+Ottis Vane is drawing the evening's first cask. Sabra Quill is present.
+
+Ottis Vane — thinking: the toll will close him by spring if it stands. He means
+to let Wren do the talking and keep the cups filled.
+Sabra Quill — thinking: she has read the letter she is carrying. She is looking
+for a reason not to hand it over.
+
+Ottis Vane &amp; Sabra Quill — twenty years of trusting each other with letters and
+nothing else.
+
+Sabra Quill: the sealed letter is addressed to the Guildmaster and she has not
+decided whether to deliver it. She is running out of afternoon.
+
+<span class="lb">&lt;|user|&gt;</span>
+The Guild's factor is at the bar and will not be here tomorrow. The shape of a
+deal is on the table and what is left is price.
+A deal is plausible now and both sides can feel it. Move them off positions and
+onto terms — numbers, timing, who goes first. Do not let them agree yet.
+
+<span class="lb">&lt;|assistant|&gt;</span>
+</pre>
+</div>
+
+<footer>
+  <span>Character Engine</span>
+  <span>Example: every module in use at once</span>
+  <span>A real story will have fewer parts lit, and that is normal</span>
+</footer>
+
+</div>
+<script>
+(function(){
+  var rows=document.querySelectorAll('details');
+  document.getElementById('ex').addEventListener('click',function(){
+    rows.forEach(function(d){d.open=true});
+  });
+  document.getElementById('co').addEventListener('click',function(){
+    rows.forEach(function(d){d.open=false});
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Character Engine — Threads, Milestones and Encounters</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#EFF1F4; --card:#FCFDFE; --ink:#151A21; --ink-2:#4C5763; --ink-3:#7E8A96;
+  --rule:#D3DAE1; --ce:#7A3E9D; --ce-soft:#F1E8F8; --nai:#3F5568; --nai-soft:#E3E9EF;
+  --warm:#A8562A; --warm-soft:#F7EBE3;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --sans:"IBM Plex Sans Condensed",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--paper);color:var(--ink);
+  font-family:var(--sans);font-size:15px;line-height:1.62}
+.wrap{max-width:880px;margin:0 auto;padding:0 24px 120px}
+
+header.mast{padding:60px 0 8px}
+.eyebrow{font-weight:700;font-size:11px;letter-spacing:.22em;text-transform:uppercase;
+  color:var(--ce);margin:0 0 12px}
+h1{font-weight:700;font-size:clamp(30px,5.6vw,48px);line-height:1.02;letter-spacing:-.02em;
+  margin:0 0 18px;max-width:18ch}
+.thesis{max-width:60ch;color:var(--ink-2);margin:0;font-size:15.5px}
+.thesis b{color:var(--ink);font-weight:600}
+
+nav.toc{margin:30px 0 0;border-top:2px solid var(--ink);border-bottom:2px solid var(--ink);
+  padding:14px 0;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:4px 20px}
+nav.toc a{color:var(--ink-2);text-decoration:none;font-size:13.5px;display:block;padding:3px 0}
+nav.toc a:hover,nav.toc a:focus-visible{color:var(--ce)}
+nav.toc a i{font-style:normal;color:var(--ce);font-weight:700;font-size:11px;
+  letter-spacing:.12em;margin-right:8px}
+
+section{padding-top:58px}
+h2{font-weight:700;font-size:clamp(21px,3.6vw,28px);letter-spacing:-.01em;margin:0 0 4px}
+h2 .num{color:var(--ce);font-size:12px;letter-spacing:.2em;display:block;margin-bottom:8px}
+.standfirst{color:var(--ink-2);max-width:62ch;margin:0 0 24px;font-size:14.5px}
+h3{font-weight:700;font-size:12px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--ink-3);margin:34px 0 12px;padding-bottom:7px;border-bottom:1px solid var(--rule)}
+p{max-width:64ch}
+p b{font-weight:600}
+
+pre{font-family:var(--mono);font-size:12px;line-height:1.6;white-space:pre-wrap;
+  word-break:break-word;overflow-wrap:anywhere;background:var(--card);
+  border:1px solid var(--rule);padding:13px 15px;margin:0 0 16px}
+
+/* the nesting diagram */
+.nest{margin:0 0 24px;font-family:var(--mono);font-size:12.5px}
+.nest .lvl{border:1px solid var(--rule);border-left:3px solid var(--ce);background:var(--card);
+  padding:12px 15px;margin-bottom:0}
+.nest .lvl .t{font-family:var(--sans);font-weight:700;font-size:11px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--ce);display:block;margin-bottom:5px}
+.nest .lvl .d{color:var(--ink-2);font-family:var(--sans);font-size:13.5px;display:block}
+.nest .l2{margin-left:26px;border-top:0}
+.nest .l3{margin-left:52px;border-top:0}
+.nest .l4{margin-left:78px;border-top:0;border-left-color:var(--warm)}
+.nest .l4 .t{color:var(--warm)}
+
+.anat{border:1px solid var(--rule);background:var(--card);margin:0 0 20px}
+.anat > .head{background:var(--ce-soft);color:var(--ce);font-weight:700;font-size:11px;
+  letter-spacing:.16em;text-transform:uppercase;padding:10px 15px;border-bottom:1px solid var(--rule)}
+.anat > .head span{float:right;font-family:var(--mono);font-size:11px;letter-spacing:0;
+  text-transform:none;font-weight:400;color:var(--ink-3)}
+.anat dl{margin:0;padding:4px 0}
+.anat dt{display:grid;grid-template-columns:150px minmax(0,1fr);gap:14px;
+  padding:9px 15px 0;align-items:baseline}
+.anat dt .k{font-weight:600;font-size:12.5px;color:var(--ink)}
+.anat dt .v{font-family:var(--mono);font-size:12px;color:var(--ce);
+  word-break:break-word;overflow-wrap:anywhere}
+.anat dd{margin:2px 0 0;padding:0 15px 9px 179px;font-size:13px;color:var(--ink-2);
+  border-bottom:1px solid var(--rule)}
+.anat dd:last-of-type{border-bottom:0}
+
+.rule-box{margin:20px 0;padding:13px 15px;background:var(--ce-soft);
+  border-left:3px solid var(--ce);font-size:14px;color:var(--ink-2);max-width:64ch}
+.rule-box b{display:block;color:var(--ce);font-weight:700;font-size:10.5px;
+  letter-spacing:.14em;text-transform:uppercase;margin-bottom:6px}
+.rule-box.warm{background:var(--warm-soft);border-left-color:var(--warm)}
+.rule-box.warm b{color:var(--warm)}
+
+table{width:100%;border-collapse:collapse;font-size:13px;margin:0 0 20px}
+th{font-weight:700;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--ink-3);text-align:left;padding:0 14px 8px 0;border-bottom:1px solid var(--rule)}
+td{padding:10px 14px 10px 0;border-bottom:1px solid var(--rule);vertical-align:top;color:var(--ink-2)}
+td:first-child{font-weight:600;color:var(--ink);white-space:nowrap}
+td code,p code,li code{font-family:var(--mono);font-size:11.5px;background:var(--paper);
+  padding:1px 5px;color:var(--ink)}
+
+ul.plain,ol.plain{max-width:64ch;padding-left:22px;margin:0 0 18px}
+ul.plain li,ol.plain li{margin-bottom:9px;color:var(--ink-2)}
+ul.plain li b,ol.plain li b{color:var(--ink);font-weight:600}
+
+.two{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px;margin-bottom:22px}
+.door{border:1px solid var(--rule);background:var(--card)}
+.door h4{margin:0;padding:11px 15px;background:var(--ce-soft);color:var(--ce);
+  font-weight:700;font-size:11px;letter-spacing:.16em;text-transform:uppercase;
+  border-bottom:1px solid var(--rule)}
+.door .b{padding:13px 15px;font-size:13px;color:var(--ink-2)}
+.door .b p{margin:0 0 9px;max-width:none}
+.door .b p:last-child{margin:0}
+.door .b b{color:var(--ink)}
+.door ol{margin:0 0 9px;padding-left:19px}
+.door ol li{margin-bottom:6px}
+
+footer{margin-top:70px;padding-top:18px;border-top:2px solid var(--ink);
+  font-size:12px;letter-spacing:.04em;color:var(--ink-3);display:flex;flex-wrap:wrap;gap:6px 22px}
+
+@media (max-width:620px){
+  .wrap{padding:0 16px 80px}
+  .anat dt{grid-template-columns:1fr;gap:2px}
+  .anat dd{padding-left:15px}
+  .nest .l2,.nest .l3,.nest .l4{margin-left:0}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="mast">
+  <p class="eyebrow">Character Engine · reader's guide</p>
+  <h1>Threads, Milestones and Encounters</h1>
+  <p class="thesis">Three things nested inside each other. A <b>thread</b> is a storyline with a shape. A <b>milestone</b> is the one thing that should happen next in it. An <b>encounter</b> is a milestone that takes more than one roll to settle. Each is a smaller, sharper version of the one above it, and only the smallest of them touches the dice.</p>
+  <nav class="toc">
+    <a href="#s1"><i>01</i>The nesting</a>
+    <a href="#s2"><i>02</i>Threads</a>
+    <a href="#s3"><i>03</i>Milestones</a>
+    <a href="#s4"><i>04</i>Encounters</a>
+    <a href="#s5"><i>05</i>Starting one</a>
+    <a href="#s6"><i>06</i>How they end</a>
+  </nav>
+</header>
+
+<!-- =============== 1 =============== -->
+<section id="s1">
+  <h2><span class="num">01</span>The nesting</h2>
+  <p class="standfirst">Read this diagram once and most of the rest follows. Each level answers a smaller question than the one above it, and each is optional — you can play with none of them.</p>
+
+  <div class="nest">
+    <div class="lvl"><span class="t">Thread</span><span class="d"><b>What this storyline is.</b> Its objective, what stands in the way, what it costs, what happens if it fails. Written once and revisited rarely. Reaches the model when it is named.</span></div>
+    <div class="lvl l2"><span class="t">Milestone</span><span class="d"><b>What should happen next.</b> One sentence, replaced as the story moves. Reaches the model on <em>every turn</em> while its thread is active.</span></div>
+    <div class="lvl l3"><span class="t">Encounter</span><span class="d"><b>How that next thing is being settled, right now.</b> The same milestone, with a track under it that rolls move. Reaches the model every turn, plus an instruction each time it changes step.</span></div>
+    <div class="lvl l4"><span class="t">Action</span><span class="d"><b>One roll.</b> Charges what the attempt costs, and moves the encounter's track if one is running.</span></div>
+  </div>
+
+  <div class="rule-box"><b>Only the last one rolls</b>
+    A thread does nothing mechanically — it is reference material. A milestone does nothing either; it is a sentence pointed at the model. An encounter is where the first number appears, and even then it does not roll itself: the Actions panel does the rolling and the encounter is what the roll moves.</div>
+
+  <p>The useful consequence: you can use any level without the ones below it. A thread with no milestone is a storyline you have described and not yet aimed. A milestone with no encounter is an objective the story is heading toward in prose. Adding an encounter is a decision to make that objective take several rolls rather than one scene.</p>
+</section>
+
+<!-- =============== 2 =============== -->
+<section id="s2">
+  <h2><span class="num">02</span>Threads</h2>
+  <p class="standfirst">A thread is a record on the <b>Threads</b> screen. Its job is to hold the logic of a storyline in one place so you are not re-deciding it every session, and so the engine has something to generate from.</p>
+
+  <h3>The five questions</h3>
+  <div class="anat">
+    <div class="head">A thread's profile</div>
+    <dl>
+      <dt><span class="k">Objective</span><span class="v">what is wanted</span></dt>
+      <dd>The thing this storyline is trying to reach. Not the next step — the end of it.</dd>
+
+      <dt><span class="k">Opposition</span><span class="v">what is in the way</span></dt>
+      <dd>What stops it. The most useful answers are not villains: a deadline, a rule, a person who would simply rather not.</dd>
+
+      <dt><span class="k">Cost</span><span class="v">what pursuing it takes</span></dt>
+      <dd>What is being spent while this runs. Money, sleep, someone's patience.</dd>
+
+      <dt><span class="k">Consequence</span><span class="v">what failing means</span></dt>
+      <dd>What the world looks like if this does not work out. This is what gives the thread stakes without needing any numbers.</dd>
+
+      <dt><span class="k">Errand</span><span class="v">optional</span></dt>
+      <dd>A small concrete task inside the larger thing. Useful when the objective is too big to act on directly.</dd>
+    </dl>
+  </div>
+
+  <p>These five compile into the thread's own lorebook entry, which reaches the model when the thread is named in the story. They are also what the milestone generator reads when you ask it for a next step.</p>
+
+  <h3>The active thread</h3>
+  <p>One thread at a time can be <b>active</b>. That is the one whose milestone is put in front of the model on every turn. Everything else stays on the shelf until named.</p>
+
+  <div class="rule-box"><b>One objective, not a list</b>
+    Making every live thread inject its milestone was tried and abandoned — several competing objectives in one place produce a model trying to serve all of them and landing on none. One pointer, one line.</div>
+
+  <h3>Choosing what generation may read</h3>
+  <p>A thread carries a checklist of characters, places and things it involves. That list is what its Generate buttons are allowed to look at. It is a selection rather than a commitment — update it when the thread turns toward somebody new.</p>
+</section>
+
+<!-- =============== 3 =============== -->
+<section id="s3">
+  <h2><span class="num">03</span>Milestones</h2>
+  <p class="standfirst">A milestone is one sentence in the slot at the top of the thread's Milestone tab. It is the highest-value field in the engine per character typed, because it is read on every single turn while the thread is active.</p>
+
+  <h3>What makes a good one</h3>
+  <ul class="plain">
+    <li><b>One thing, not a plan.</b> "Get the factor to name a number in front of a witness" — not "win the toll dispute."</li>
+    <li><b>Observable.</b> Something a scene could show landing. If you cannot picture the moment it happens, the model cannot write it.</li>
+    <li><b>Reachable from here.</b> Not from where the thread ends — from where the protagonist is standing right now.</li>
+    <li><b>Present tense, and naming who.</b> It is put into the model's context as a statement about the current situation.</li>
+  </ul>
+
+  <h3>Target</h3>
+  <p>Optionally, a place, a person or a thing the step is aimed at. If it is somewhere else on the map, the engine adds how far away it is to the line the model reads — so a milestone aimed at the Guild House says so, and says it is ten minutes off.</p>
+
+  <h3>Asking for one</h3>
+  <p>The <b>Generate</b> button under the slot reads the thread's five questions, everything already resolved on it, the records you selected, and where the story currently stands. It offers several candidates and each is a <b>different kind of beat</b> — one where something goes wrong, one where an opportunity opens, one where a cost comes due — rather than the same event at three volumes.</p>
+
+  <div class="rule-box"><b>Nothing fills the slot for you</b>
+    Resolving a milestone leaves the slot empty and the generate offer sitting there. That is deliberate: a tool that automatically fills the gap it just made has started driving the story rather than helping you drive it.</div>
+
+  <h3>Resolved milestones</h3>
+  <p>Resolving files the milestone under <b>Resolved</b> on the same tab. Those are <b>never injected</b> — they are what the next milestone is generated <em>from</em>. If a resolved milestone was a real event in the story, copy it into the Journal, where it becomes part of the record the model reads.</p>
+</section>
+
+<!-- =============== 4 =============== -->
+<section id="s4">
+  <h2><span class="num">04</span>Encounters</h2>
+  <p class="standfirst">An encounter is not a separate record. It is a <b>milestone with a track under it</b> — the same sentence, still doing the same job, now with a number saying how far along it is and a shape saying how it is graded.</p>
+
+  <h3>What the shape brings</h3>
+  <div class="anat">
+    <div class="head">Negotiation <span>one of ten seeded shapes</span></div>
+    <dl>
+      <dt><span class="k">Span</span><span class="v">4 steps</span></dt>
+      <dd>How many good rolls it takes. Not hit points — successes.</dd>
+
+      <dt><span class="k">Bands</span><span class="v">the positions are stated · they are listening · the shape of a deal is on the table · one condition stands between them · it is agreed</span></dt>
+      <dd>How it reads at each step. Whichever one the track is currently on is stated to the model as a fact, every turn, right under your milestone.</dd>
+
+      <dt><span class="k">Directives</span><span class="v">on the steps worth announcing</span></dt>
+      <dd>An instruction sent the moment the track arrives at that step. This is what actually paces a scene — "move them off positions and onto terms, do not let them agree yet."</dd>
+
+      <dt><span class="k">Its wager</span><span class="v">Negotiation (encounter)</span></dt>
+      <dd>What moves the track. A Miss gives ground back, a Partial or a Strong gains a step.</dd>
+    </dl>
+  </div>
+
+  <p>All of that is authored once, in <b>Settings › States</b>, on a state whose scope is Encounter. Starting one does not ask you any of it again.</p>
+
+  <h3>What changes while one runs</h3>
+  <ul class="plain">
+    <li><b>Your milestone gets a second sentence.</b> Where the track stands is appended to it, so the model reads the objective and the current situation together.</li>
+    <li><b>Every roll moves it.</b> The shape's wager is charged on top of whatever the attempt itself costs. Two wagers, one receipt.</li>
+    <li><b>Unless you hold it.</b> A toggle on the Actions panel stops one roll from advancing the track — for the attempts that are not swings.</li>
+    <li><b>Crossing a step speaks.</b> The directive for that band goes to the model as its own instruction, immediately before it writes.</li>
+    <li><b>Only one at a time.</b> Across the whole story, not per thread. Both surfaces will tell you if one is already running.</li>
+  </ul>
+
+  <div class="rule-box warm"><b>The two wagers are not the same thing</b>
+    The <b>base wager</b> is what the attempt costs the person making it, and the approach picks it — Force spends Health, Focus spends Soul. The <b>encounter's wager</b> moves the track and belongs to the shape. Encounter wagers are deliberately kept out of the Stakes picker, because choosing one there while an encounter is running would charge the same track twice for one roll.</div>
+</section>
+
+<!-- =============== 5 =============== -->
+<section id="s5">
+  <h2><span class="num">05</span>Starting one</h2>
+  <p class="standfirst">Two doors onto the same thing, and which one you use depends on whether the objective already exists.</p>
+
+  <div class="two">
+    <div class="door">
+      <h4>From Threads › Milestone</h4>
+      <div class="b">
+        <p>Use this when the objective is <b>already written</b> and you have decided it should take several rolls.</p>
+        <ol>
+          <li>Pick a <b>Shape</b>.</li>
+          <li>Press <b>Grade this as an encounter</b>.</li>
+        </ol>
+        <p>It asks two things because the third is already on screen — the milestone above stays exactly as written and becomes what the encounter is about. Nothing is retyped and nothing is replaced.</p>
+      </div>
+    </div>
+    <div class="door">
+      <h4>From the Actions panel</h4>
+      <div class="b">
+        <p>Use this when something has <b>just happened</b> and there is no milestone for it.</p>
+        <ol>
+          <li>Pick a <b>Shape</b>.</li>
+          <li>Write, or <b>Generate</b>, the line saying what is happening.</li>
+          <li>Press <b>Begin encounter</b>.</li>
+        </ol>
+        <p>It asks for the line because it may be starting from nothing. The Generate button appears once a shape is chosen — the shape is what tells it what kind of thing to invent.</p>
+      </div>
+    </div>
+  </div>
+
+  <h3>Where it gets filed</h3>
+  <p>You are never asked. If a thread is active, the encounter attaches to that thread's current milestone — and if there is no milestone yet, one is made from the line you wrote. If no thread is active, it is filed loose, in an encounter log that keeps the most recent and lets older ones fall off. The right answer is already known, so the engine does not ask a question it can work out.</p>
+
+  <div class="rule-box"><b>Generating does not start anything</b>
+    Choosing a candidate puts the line in the field. You still press Begin. Choosing what happens and committing to it are two decisions, and the generator only makes the first one.</div>
+</section>
+
+<!-- =============== 6 =============== -->
+<section id="s6">
+  <h2><span class="num">06</span>How they end</h2>
+  <p class="standfirst">An encounter has two exits and they leave the milestone in different places. Both buttons are on both surfaces.</p>
+
+  <table>
+    <tr><th>Button</th><th>The track</th><th>The milestone</th><th>Use when</th></tr>
+    <tr><td>Conclude</td><td>Where it ended is stamped onto the record, then cleared</td><td><b>Filed as resolved</b></td><td>It is over. The fight ended, the deal was struck, the job is done.</td></tr>
+    <tr><td>Cancel encounter</td><td>Cleared, nothing kept</td><td><b>Left standing</b></td><td>The story walked past it, or you changed your mind. The objective is still open.</td></tr>
+  </table>
+
+  <p>The distinction matters because "the fight ended offscreen" and "the objective is met" are not the same thing, and collapsing them into one button would make the easy escape hatch also resolve something you never finished.</p>
+
+  <h3>When to conclude early</h3>
+  <p>Usually you conclude when the track reaches its end. There is one shape where you should not wait: <b>Infiltration</b> climbs toward being <em>caught</em>. Nothing on that track is progress toward the job, so you conclude it the moment the thing is stolen — well before the track fills. Letting it fill is the failure.</p>
+
+  <div class="rule-box"><b>A thread does not end with its encounter</b>
+    Concluding an encounter resolves one milestone. The thread carries on, with an empty slot waiting for the next one. A thread only finishes when you decide it has — there is no button for that, because "this storyline is over" is a judgement and not a state.</div>
+
+  <h3>The whole loop</h3>
+  <ol class="plain">
+    <li>Write a <b>thread</b> — its objective, opposition, cost and consequence.</li>
+    <li>Make it <b>active</b>, and write or generate a <b>milestone</b>.</li>
+    <li>If it should take several rolls, pick a <b>shape</b> and grade it as an <b>encounter</b>.</li>
+    <li>Play it out with <b>actions</b> on the Actions panel. Each roll charges its cost and moves the track.</li>
+    <li><b>Conclude</b>, and write the next milestone. Copy the resolved one into the <b>Journal</b> if it mattered.</li>
+  </ol>
+</section>
+
+<footer>
+  <span>Character Engine</span>
+  <span>Threads › Milestone · Actions · Settings › States</span>
+  <span>Every level is optional; the loop works from any point in it</span>
+</footer>
+
+</div>
+</body>
+</html>

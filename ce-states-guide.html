@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Character Engine — States, Stakes and Actions</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#EFF1F4; --card:#FCFDFE; --ink:#151A21; --ink-2:#4C5763; --ink-3:#7E8A96;
+  --rule:#D3DAE1; --ce:#7A3E9D; --ce-soft:#F1E8F8; --nai:#3F5568; --nai-soft:#E3E9EF;
+  --warm:#A8562A; --warm-soft:#F7EBE3;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --sans:"IBM Plex Sans Condensed",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--paper);color:var(--ink);
+  font-family:var(--sans);font-size:15px;line-height:1.62}
+.wrap{max-width:880px;margin:0 auto;padding:0 24px 120px}
+
+header.mast{padding:60px 0 8px}
+.eyebrow{font-weight:700;font-size:11px;letter-spacing:.22em;text-transform:uppercase;
+  color:var(--ce);margin:0 0 12px}
+h1{font-weight:700;font-size:clamp(30px,5.6vw,48px);line-height:1.02;letter-spacing:-.02em;
+  margin:0 0 18px;max-width:18ch}
+.thesis{max-width:60ch;color:var(--ink-2);margin:0;font-size:15.5px}
+.thesis b{color:var(--ink);font-weight:600}
+
+nav.toc{margin:30px 0 0;border-top:2px solid var(--ink);border-bottom:2px solid var(--ink);
+  padding:14px 0;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:4px 20px}
+nav.toc a{color:var(--ink-2);text-decoration:none;font-size:13.5px;display:block;padding:3px 0}
+nav.toc a:hover,nav.toc a:focus-visible{color:var(--ce)}
+nav.toc a i{font-style:normal;color:var(--ce);font-weight:700;font-size:11px;
+  letter-spacing:.12em;margin-right:8px}
+
+section{padding-top:58px}
+h2{font-weight:700;font-size:clamp(21px,3.6vw,28px);letter-spacing:-.01em;margin:0 0 4px}
+h2 .num{color:var(--ce);font-size:12px;letter-spacing:.2em;display:block;margin-bottom:8px}
+.standfirst{color:var(--ink-2);max-width:62ch;margin:0 0 24px;font-size:14.5px}
+h3{font-weight:700;font-size:12px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--ink-3);margin:34px 0 12px;padding-bottom:7px;border-bottom:1px solid var(--rule)}
+p{max-width:64ch}
+p b{font-weight:600}
+
+pre{font-family:var(--mono);font-size:12px;line-height:1.6;white-space:pre-wrap;
+  word-break:break-word;overflow-wrap:anywhere;background:var(--card);
+  border:1px solid var(--rule);padding:13px 15px;margin:0 0 16px}
+
+/* anatomy: a seed taken apart */
+.anat{border:1px solid var(--rule);background:var(--card);margin:0 0 20px}
+.anat > .head{background:var(--ce-soft);color:var(--ce);font-weight:700;font-size:11px;
+  letter-spacing:.16em;text-transform:uppercase;padding:10px 15px;border-bottom:1px solid var(--rule)}
+.anat > .head span{float:right;font-family:var(--mono);font-size:11px;letter-spacing:0;
+  text-transform:none;font-weight:400;color:var(--ink-3)}
+.anat dl{margin:0;padding:4px 0}
+.anat dt{display:grid;grid-template-columns:130px minmax(0,1fr);gap:14px;
+  padding:9px 15px 0;align-items:baseline}
+.anat dt .k{font-weight:600;font-size:12.5px;color:var(--ink)}
+.anat dt .v{font-family:var(--mono);font-size:12px;color:var(--ce);
+  word-break:break-word;overflow-wrap:anywhere}
+.anat dd{margin:2px 0 0;padding:0 15px 9px 159px;font-size:13px;color:var(--ink-2);
+  border-bottom:1px solid var(--rule)}
+.anat dd:last-of-type{border-bottom:0}
+
+.rule-box{margin:20px 0;padding:13px 15px;background:var(--ce-soft);
+  border-left:3px solid var(--ce);font-size:14px;color:var(--ink-2);max-width:64ch}
+.rule-box b{display:block;color:var(--ce);font-weight:700;font-size:10.5px;
+  letter-spacing:.14em;text-transform:uppercase;margin-bottom:6px}
+.rule-box.warm{background:var(--warm-soft);border-left-color:var(--warm)}
+.rule-box.warm b{color:var(--warm)}
+
+table{width:100%;border-collapse:collapse;font-size:13px;margin:0 0 20px}
+th{font-weight:700;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--ink-3);text-align:left;padding:0 14px 8px 0;border-bottom:1px solid var(--rule)}
+td{padding:10px 14px 10px 0;border-bottom:1px solid var(--rule);vertical-align:top;
+  color:var(--ink-2)}
+td:first-child{font-weight:600;color:var(--ink);white-space:nowrap}
+td code,p code,li code,.anat code{font-family:var(--mono);font-size:11.5px;
+  background:var(--paper);padding:1px 5px;color:var(--ink)}
+tr.miss td:first-child{color:var(--warm)}
+
+/* the three-row stake grid */
+.stake{border:1px solid var(--rule);background:var(--card);margin:0 0 8px}
+.stake .sh{display:grid;grid-template-columns:92px 1fr 1fr;gap:1px;background:var(--rule)}
+.stake .sh > div{background:var(--ce-soft);color:var(--ce);font-weight:700;font-size:10px;
+  letter-spacing:.14em;text-transform:uppercase;padding:8px 12px}
+.stake .sr{display:grid;grid-template-columns:92px 1fr 1fr;gap:1px;background:var(--rule)}
+.stake .sr > div{background:var(--card);padding:10px 12px;font-size:12.5px;color:var(--ink-2)}
+.stake .sr > div:first-child{font-weight:600;color:var(--ink);font-size:12px}
+.stake .sr .none{color:var(--ink-3);font-style:italic}
+.cap{font-size:12.5px;color:var(--ink-3);margin:0 0 22px;max-width:62ch}
+
+ul.plain{max-width:64ch;padding-left:20px;margin:0 0 18px}
+ul.plain li{margin-bottom:8px;color:var(--ink-2)}
+ul.plain li b{color:var(--ink);font-weight:600}
+
+.receipt{border:1px solid var(--rule);background:var(--card);margin:0 0 8px}
+.receipt .rr{display:grid;grid-template-columns:110px minmax(0,1fr);gap:12px;
+  padding:8px 14px;border-bottom:1px solid var(--rule);font-size:12.5px}
+.receipt .rr:last-child{border-bottom:0}
+.receipt .rr .l{font-weight:600;font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-3)}
+.receipt .rr .v{font-family:var(--mono);font-size:12px;color:var(--ink)}
+.receipt .rr.head{background:var(--ce-soft)}
+.receipt .rr.head .l{color:var(--ce)}
+
+footer{margin-top:70px;padding-top:18px;border-top:2px solid var(--ink);
+  font-size:12px;letter-spacing:.04em;color:var(--ink-3);display:flex;flex-wrap:wrap;gap:6px 22px}
+
+@media (max-width:620px){
+  .wrap{padding:0 16px 80px}
+  .anat dt{grid-template-columns:1fr;gap:2px}
+  .anat dd{padding-left:15px}
+  .stake .sh,.stake .sr{grid-template-columns:1fr}
+  .stake .sh > div:first-child{grid-column:1}
+  .receipt .rr{grid-template-columns:1fr;gap:2px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="mast">
+  <p class="eyebrow">Character Engine · reader's guide</p>
+  <h1>States, Stakes and Actions</h1>
+  <p class="thesis">Three things stacked on each other. A <b>state</b> is a number that means something. A <b>stake</b> is a table saying what each outcome costs. An <b>action</b> is a roll that reads the first and applies the second. Once those three make sense, an <b>encounter</b> is just a state the whole scene is playing against.</p>
+  <nav class="toc">
+    <a href="#s1"><i>01</i>States</a>
+    <a href="#s2"><i>02</i>Stakes</a>
+    <a href="#s3"><i>03</i>The roll</a>
+    <a href="#s4"><i>04</i>Actions</a>
+    <a href="#s5"><i>05</i>Encounters</a>
+    <a href="#s6"><i>06</i>One roll, end to end</a>
+  </nav>
+</header>
+
+<!-- ===================== 1 ===================== -->
+<section id="s1">
+  <h2><span class="num">01</span>States</h2>
+  <p class="standfirst">The engine knows exactly one kind of thing: a number with a floor, a ceiling, and optional words attached to each step. Health is that. So is Luck, so is a fistfight. Nothing on this list is built in — every one is a row you can edit or delete in <b>Settings › States</b>.</p>
+
+  <h3>Health, taken apart</h3>
+  <div class="anat">
+    <div class="head">Health <span>seeded</span></div>
+    <dl>
+      <dt><span class="k">Name</span><span class="v">Health</span></dt>
+      <dd>What it is called on the profile and in the receipt.</dd>
+
+      <dt><span class="k">Scope</span><span class="v">Character</span></dt>
+      <dd>Who owns a value. <b>Character</b> gives every person their own. <b>Protagonist</b> is one shared number for the player. <b>Faction</b> belongs to an organisation, and <b>Encounter</b> belongs to a running situation rather than to anybody.</dd>
+
+      <dt><span class="k">Min / Max</span><span class="v">0 / 4</span></dt>
+      <dd>The span. Keep it small. Four steps of health means one point of damage is one step worse and the change is felt; on a 0–100 track, losing one point is invisible.</dd>
+
+      <dt><span class="k">Starts at</span><span class="v">4</span></dt>
+      <dd>What a new character has before anything happens to them.</dd>
+
+      <dt><span class="k">Bands</span><span class="v">is dying · is badly hurt · is hurt · is bruised · is unhurt</span></dt>
+      <dd>The words. A band is how the number <b>reads</b> at that step, and it is the only part the model ever sees — the number itself is never shown to it. Write each one as the middle of a sentence: the character's name goes in front and a full stop after.</dd>
+
+      <dt><span class="k">Resting band</span><span class="v">is unhurt</span></dt>
+      <dd>The one that says nothing. Sitting at rest, Health is silent in the story — an unhurt character does not need announcing. Move off it and the line appears.</dd>
+
+      <dt><span class="k">At minimum</span><span class="v">This character dies from their wounds…</span></dt>
+      <dd>A <b>terminal</b>: an instruction sent to the model the moment the value arrives here. This is not flavour text, it is the thing that makes hitting zero mean something. Terminals can also be set at the maximum or on reaching a named band.</dd>
+
+      <dt><span class="k">Line</span><span class="v">(default)</span></dt>
+      <dd>How the band gets turned into a sentence. Leave it alone unless your bands are full sentences rather than fragments — the Conditions below show that case.</dd>
+    </dl>
+  </div>
+
+  <div class="rule-box"><b>The band is the unit</b>
+    Every scale in the engine should be band-sized, because a wager moves things by one. Health has four steps and a Miss costs one of them. If you write a state with a hundred steps, a Miss costing one point is noise and nothing ever visibly changes.</div>
+
+  <h3>The five things a state can be</h3>
+  <p>The seeds are not a menu of features — they are five worked examples of the same one mechanism, and each demonstrates a different shape.</p>
+
+  <table>
+    <tr><th>Category</th><th>Seeded</th><th>What makes it that shape</th></tr>
+    <tr><td>Vitals</td><td>Health, Stamina, Soul</td><td>Banded, start at full, count down, and each carries a terminal at the floor. These are what most wagers charge.</td></tr>
+    <tr><td>Approaches</td><td>Force, Finesse, Focus, Flair</td><td><b>Deliberately unbanded</b>, which makes them silent — a model told "Force 3" starts imitating the number. They exist for the dice, not the prose. Each adds its value to the roll.</td></tr>
+    <tr><td>Resources</td><td>Currency, Luck</td><td>Unbanded, so also silent. Luck can be spent for a bonus on a roll; Currency is just counted.</td></tr>
+    <tr><td>Conditions</td><td>Intoxicated, Ill, Pregnant</td><td>Start at <b>nothing</b> and hide themselves until used, so a profile is not cluttered with three rows nobody has. Their bands are sentences rather than fragments, which is why they carry their own Line.</td></tr>
+    <tr><td>Encounters</td><td>ten shapes</td><td>Owned by a situation instead of a person. Covered in section 05.</td></tr>
+  </table>
+
+  <div class="rule-box"><b>Silence is a feature</b>
+    Two separate things keep the context clean, and they are easy to confuse. A state with <b>no bands at all</b> never speaks — that is Force and Luck. A state <b>sitting on its resting band</b> is silent until it moves — that is Health and Stamina. So a party of six unhurt people costs you nothing, and neither do their four approach ratings.</div>
+
+  <h3>Attachments</h3>
+  <p>A state can be marked as doing a job beyond holding a number. Two of these are read today:</p>
+  <ul class="plain">
+    <li><b>Adds to rolls.</b> The four Approaches carry this. Whatever the character's value is, it is added to the dice — and so is any bonus from what they are carrying. The receipt shows the arithmetic.</li>
+    <li><b>Can be spent for a bonus.</b> Luck carries this. One point spent buys +1 on one roll, and you do not get it back.</li>
+  </ul>
+</section>
+
+<!-- ===================== 2 ===================== -->
+<section id="s2">
+  <h2><span class="num">02</span>Stakes</h2>
+  <p class="standfirst">A stake is a small table that answers one question: <b>when this attempt lands, what moves?</b> It has one row per possible outcome, and two cells per row — one for the person acting, one for whoever they aimed at.</p>
+
+  <h3>Health, the wager Force uses</h3>
+  <div class="stake">
+    <div class="sh"><div>Outcome</div><div>Charges the actor</div><div>Charges the target</div></div>
+    <div class="sr"><div>Miss</div><div>Health &minus;1</div><div class="none">nothing</div></div>
+    <div class="sr"><div>Partial</div><div>Health &minus;1</div><div>Health &minus;1</div></div>
+    <div class="sr"><div>Strong</div><div class="none">nothing</div><div>Health &minus;1</div></div>
+  </div>
+  <p class="cap">Read down the table and the whole design is visible: a Miss costs you, a Partial costs you both, a Strong costs them. That shape is the fail-forward idea expressed as arithmetic.</p>
+
+  <h3>What is in a cell</h3>
+  <p>Each of the six cells is either empty — that side pays nothing — or one of four kinds of charge:</p>
+  <table>
+    <tr><th>Kind</th><th>Does what</th></tr>
+    <tr><td>A state</td><td>Moves a named state on that side by a set amount. This is nearly everything.</td></tr>
+    <tr><td>Position</td><td>Moves the relationship between the two people involved instead of any number on a sheet. Used by the Flair wager.</td></tr>
+    <tr><td>Time</td><td>Advances the story clock by a number of minutes. Nothing on a sheet moves; the afternoon does.</td></tr>
+    <tr><td class="none">Empty</td><td>Nothing. A perfectly good answer, and what a Strong charges the actor in most tables.</td></tr>
+  </table>
+
+  <h3>The other seeded wagers</h3>
+  <div class="anat">
+    <div class="head">Four wagers, one per approach</div>
+    <dl>
+      <dt><span class="k">Health</span><span class="v">default for Force</span></dt>
+      <dd>The table above. Force is how you get hurt and how you hurt people.</dd>
+
+      <dt><span class="k">Stamina</span><span class="v">default for Finesse</span></dt>
+      <dd>A Miss and a Partial each cost the actor a step of Stamina; a Strong is clean. Nothing touches the target — running, climbing and picking a lock do not injure anyone.</dd>
+
+      <dt><span class="k">Soul</span><span class="v">default for Focus</span></dt>
+      <dd>Exactly the same shape as Stamina, charging Soul instead. That is the entire difference between the two approaches at the till: <b>what</b> they spend, not how much. Focus is concentration, vigil and will, and it costs composure rather than wind.</dd>
+
+      <dt><span class="k">Position</span><span class="v">default for Flair</span></dt>
+      <dd>The odd one, and worth understanding. It names no state at all — it moves the <b>relationship</b> between the two people. A Miss strains it by a tier, a Strong eases it by one, a Partial leaves it alone. Talking your way through something has a cost, and the cost is what it does to the person you talked at.</dd>
+
+      <dt><span class="k">Currency</span><span class="v">default for nothing</span></dt>
+      <dd>Deliberately not attached to an approach. Buying something is a decision you make, not an outcome of being charming, so you pick this one by hand when it applies.</dd>
+    </dl>
+  </div>
+
+  <div class="rule-box"><b>Keep the numbers at one</b>
+    Every seeded wager moves things by a single step, and that is not timidity. The prose is already naming the cost — the model has just written that she went down hard — so a ledger moving in tens would contradict the sentence beside it. One point is felt across a session.</div>
+
+  <h3>Judged by, and Default for</h3>
+  <p>Two settings sit above the rows. <b>Judged by</b> names which dice table this wager's rows line up with — its rows are matched to that table's outcomes in order, so a three-outcome table gets three rows. <b>Default for</b> lists approaches that reach for this wager automatically, which is how choosing Force on the panel silently puts Health on the line without you saying so.</p>
+
+  <div class="rule-box warm"><b>When a cell cannot be charged</b>
+    Aim at nobody and the target cells have nowhere to land. A value already at its floor cannot go lower. Neither is an error, and neither is hidden: the receipt lists the cell with the reason it did nothing, because a line that was quietly dropped looks exactly like a wager you forgot to write.</div>
+</section>
+
+<!-- ===================== 3 ===================== -->
+<section id="s3">
+  <h2><span class="num">03</span>The roll</h2>
+  <p class="standfirst">Between the state and the stake sits the dice table, in <b>Settings › Rolls</b>. It decides which row of the wager fires, and it is the thing that talks to the model.</p>
+
+  <h3>2d6 fail-forward, the seeded table</h3>
+  <table>
+    <tr><th>Outcome</th><th>Total</th><th>What the model is told</th></tr>
+    <tr class="miss"><td>Miss</td><td>6 or less</td><td>The attempt fails and the situation gets worse. Name the new problem; do not simply restate the failure.</td></tr>
+    <tr><td>Partial</td><td>7–9</td><td>The attempt succeeds, but at a cost. Grant what was wanted and name the price in the same breath.</td></tr>
+    <tr><td>Strong</td><td>10+</td><td>The attempt succeeds cleanly. Give it to them without a hidden catch.</td></tr>
+  </table>
+  <p class="cap">That third column is the band's <b>The model reads</b> field. It is sent as an instruction the moment the roll lands, and it is the reason a Miss produces a complication instead of a shrug. A band with nothing written there rolls fine and tells the model nothing.</p>
+
+  <div class="rule-box"><b>A Miss is not a stop</b>
+    Nothing in this table says "you fail, try again." Every outcome moves the story — that is what fail-forward means, and it is why the wager can charge something on all three rows without the scene stalling.</div>
+
+  <h3>What gets added to the dice</h3>
+  <ul class="plain">
+    <li><b>The approach rating.</b> Force 2 is +2. Nothing else about the character is consulted.</li>
+    <li><b>Gear.</b> An item can carry a bonus to a named state, and it counts while the item is equipped.</li>
+    <li><b>A bonus you paid for.</b> Spend Luck on the panel: one point buys +1, up to a cap, and it is gone whether you succeed or not.</li>
+  </ul>
+  <p>All three are listed separately in the receipt rather than pre-added, so you can always check the total rather than having to trust it.</p>
+</section>
+
+<!-- ===================== 4 ===================== -->
+<section id="s4">
+  <h2><span class="num">04</span>Actions</h2>
+  <p class="standfirst">The Actions panel is where the three come together. It reads top to bottom, and only one field is required.</p>
+
+  <div class="anat">
+    <div class="head">The panel, in order</div>
+    <dl>
+      <dt><span class="k">Your attempted action</span><span class="v">required</span></dt>
+      <dd>What is being tried, in your own words. This is the only thing you must fill in.</dd>
+
+      <dt><span class="k">Approach</span><span class="v">Force · Finesse · Focus · Flair</span></dt>
+      <dd><b>How</b> you are going about it. It adds its rating to the dice and it quietly selects the wager. Four cover attacking, diving, seducing and bribing without needing an action defined for any of them.</dd>
+
+      <dt><span class="k">Target</span><span class="v">a person, a faction, or none</span></dt>
+      <dd>Who or what this lands on. It is what the target-side cells of the wager reach, and leaving it empty is a real answer — plenty of attempts are aimed at a situation.</dd>
+
+      <dt><span class="k">Stakes</span><span class="v">automatic · a chosen wager · none</span></dt>
+      <dd>Three answers, not two. <b>Automatic</b> takes whatever the approach defaults to. <b>None</b> means you are deliberately risking nothing this turn. Those are genuinely different and the panel keeps them apart.</dd>
+
+      <dt><span class="k">Bonus</span><span class="v">optional</span></dt>
+      <dd>Spend a resource for a bonus. Appears only when you have something marked as spendable.</dd>
+
+      <dt><span class="k">Roll it</span><span class="v">a button of its own</span></dt>
+      <dd>Deliberately not the same button as Send. You can see the outcome before you commit to a turn — which means you can decide not to use it, and it means testing a table does not force the story forward.</dd>
+
+      <dt><span class="k">How it turned out</span><span class="v">the receipt</span></dt>
+      <dd>Every number that went into the roll and every value that came out of it. Section 06 walks through one.</dd>
+
+      <dt><span class="k">Move something</span><span class="v">no roll</span></dt>
+      <dd>Puts a person in a place or an object in a pair of hands. Nothing is rolled, nothing is charged, nothing is written to the story.</dd>
+    </dl>
+  </div>
+
+  <div class="rule-box"><b>Put this back</b>
+    Under the ledger is an undo for the <b>charges only</b>. It restores the values the wager moved and nothing else — the turn still happened and anything you spent for a bonus stays spent, because the roll already had the benefit of it.</div>
+</section>
+
+<!-- ===================== 5 ===================== -->
+<section id="s5">
+  <h2><span class="num">05</span>Encounters</h2>
+  <p class="standfirst">Some things are not settled by one roll. A fight, a negotiation, a night spent getting somewhere in bad weather — these run across several attempts, and what is missing from a single roll is any sense of <b>how far along it is</b>. An encounter is a state that holds exactly that.</p>
+
+  <h3>What it actually is</h3>
+  <p>An encounter is a state whose scope is <b>Encounter</b>, so it belongs to the situation rather than to a person. Its span is how many good rolls the thing takes. Its bands are how it reads at each step. Its terminals are what the model is told when a step is reached. In other words it is everything in section 01, pointed at a scene instead of a character.</p>
+
+  <p>Starting one asks two questions and nothing else: <b>which shape</b>, and <b>one line saying what is happening</b>. Everything else the shape already knows.</p>
+
+  <h3>While one is running</h3>
+  <ul class="plain">
+    <li><b>It leads the scene block.</b> Your one line, plus where the track currently stands, sits at the top of what the model reads on every turn.</li>
+    <li><b>Every roll advances it.</b> The shape carries its own wager, and that is charged <b>on top of</b> whatever the attempt itself risks. So a Force swing costs you Health from the base wager and moves the fight's track from the encounter's.</li>
+    <li><b>Except when it shouldn't.</b> A toggle on the panel holds the track still for one roll — for the attempts that are not swings. Looking for a way out, saying something, checking a door.</li>
+    <li><b>Crossing a step speaks.</b> When the track moves into a band with a directive, the model is told, as its own instruction, right before it writes. That is what actually paces a scene.</li>
+  </ul>
+
+  <h3>The ten seeded shapes</h3>
+  <p>They all count <b>up</b>: the track is a progress bar and a progress bar fills. There is one exception and it proves the rule.</p>
+  <table>
+    <tr><th>Shape</th><th>Length</th><th>Ends</th></tr>
+    <tr><td>Melee</td><td>3 steps</td><td>At the top. Losing is not on this track — that is your Health, charged by the attempt.</td></tr>
+    <tr><td>Interrogation</td><td>3 steps</td><td>At the top, when they give it up. Rolled on Flair, so it costs the relationship.</td></tr>
+    <tr><td>Negotiation</td><td>4 steps</td><td>At the top, in agreement. A Miss gives ground back. There is no losing, only walking away.</td></tr>
+    <tr><td>Chase</td><td>starts in the middle</td><td>Both ends. Caught, or gone. Rolled on Finesse, so a long one runs you down.</td></tr>
+    <tr><td>Crossing</td><td>5 steps</td><td>At the top, when you are through. No opponent at all — weather, water, distance.</td></tr>
+    <tr><td>Ritual</td><td>5 steps</td><td>At the top, when the working holds. Rolled on Focus; if it fails it fails through your Soul, not this track.</td></tr>
+    <tr class="miss"><td>Infiltration</td><td>5 steps</td><td><b>At the top, badly.</b> This one climbs toward being caught. Nothing on it is progress — you finish the job and conclude it before the track runs out.</td></tr>
+    <tr><td>Courtship</td><td>starts near the bottom</td><td>Both ends. Long, because it is meant to take several scenes.</td></tr>
+    <tr><td>Battle</td><td>starts in the middle</td><td>Both ends. Its bands describe a line rather than the people in it.</td></tr>
+    <tr><td>Faction conflict</td><td>starts in the middle</td><td>Both ends. Nothing in it happens in the room — a letter or a market can move it.</td></tr>
+  </table>
+
+  <div class="rule-box"><b>Three structures, and every shape is one of them</b>
+    <b style="display:inline;text-transform:none;letter-spacing:0;font-size:14px;color:var(--ink)">One-ended</b> — an ending at the top and nothing at the bottom. You succeed or you give up, and giving up is Cancel.<br>
+    <b style="display:inline;text-transform:none;letter-spacing:0;font-size:14px;color:var(--ink)">Two-ended</b> — an ending at both bounds, starting between them. Both are somebody's win.<br>
+    <b style="display:inline;text-transform:none;letter-spacing:0;font-size:14px;color:var(--ink)">A cost meter</b> — climbing is the danger and the goal is not on the track at all. Infiltration is the only seeded one.</div>
+
+  <h3>Which wager is which</h3>
+  <p>Two are running at once and it is worth keeping them straight. The <b>base wager</b> is what the attempt costs the person making it — Health, Stamina, Soul, the relationship — and it is picked by the approach. The <b>encounter's wager</b> is what moves the track, and it belongs to the shape. Two tables, one ledger, and the receipt lists both.</p>
+  <p>This is also why the encounter wagers do not appear in the Stakes picker. Choosing one there while an encounter is running would charge the track twice for one roll.</p>
+
+  <h3>Finishing</h3>
+  <ul class="plain">
+    <li><b>Conclude</b> — it ended. Normally you press this when the track reaches its end, but for a cost meter like Infiltration you press it the moment the job is done, well before the track fills.</li>
+    <li><b>Cancel encounter</b> — it stopped mattering, or you changed your mind. Nothing is recorded as having happened.</li>
+  </ul>
+  <p>An encounter attached to a thread files itself under that thread. One started on its own goes into the encounter log, oldest dropping off over time.</p>
+</section>
+
+<!-- ===================== 6 ===================== -->
+<section id="s6">
+  <h2><span class="num">06</span>One roll, end to end</h2>
+  <p class="standfirst">A negotiation is running. Wren is trying to get the Guild's factor to name a number in front of a witness. She has Flair 2 and is carrying nothing that helps.</p>
+
+  <h3>What she set up</h3>
+  <pre>Your attempted action   Get him to say a figure out loud, in front of Ottis
+Approach                Flair
+Target                  The Guild's factor
+Stakes                  Automatic
+Bonus                   none
+This roll advances it   on</pre>
+
+  <h3>What came back</h3>
+  <div class="receipt">
+    <div class="rr"><span class="l">Actor</span><span class="v">Wren Halloway · Flair</span></div>
+    <div class="rr"><span class="l">Target</span><span class="v">The Guild's factor</span></div>
+    <div class="rr"><span class="l">Dice</span><span class="v">2d6 fail-forward &nbsp; 4 + 3 = 7</span></div>
+    <div class="rr"><span class="l">Modifier</span><span class="v">Flair +2 &nbsp; = +2</span></div>
+    <div class="rr"><span class="l">Total</span><span class="v">9</span></div>
+    <div class="rr"><span class="l">Outcome</span><span class="v">Partial</span></div>
+    <div class="rr head"><span class="l">Sent</span><span class="v">The attempt succeeds, but at a cost. Grant what was wanted and name the price in the same breath.
+A deal is plausible now and both sides can feel it. Move them off positions and onto terms — numbers, timing, who goes first. Do not let them agree yet.</span></div>
+    <div class="rr"><span class="l">Stake · Position</span><span class="v">Partial charges nothing on this row.</span></div>
+    <div class="rr"><span class="l">Stake · Negotiation</span><span class="v">Negotiation +1 → the shape of a deal is on the table</span></div>
+  </div>
+
+  <h3>Reading it back</h3>
+  <ul class="plain">
+    <li><b>The dice were mediocre and the approach carried it.</b> 7 raw is a Miss; Flair 2 lifted it to 9, which is a Partial. That is what an approach rating buys.</li>
+    <li><b>The base wager charged nothing.</b> Position's middle row is empty — a Partial neither strains nor eases a relationship. Had she Missed, the factor would have cooled toward her by a tier.</li>
+    <li><b>The encounter's wager moved the track one step</b>, into a new band, which is why a second instruction went out.</li>
+    <li><b>Two instructions were sent, and that is normal.</b> The first is the outcome band's — what a Partial means. The second is the encounter step's — what has just changed about the situation. One describes the roll, the other describes the scene.</li>
+    <li><b>Nothing here is hidden.</b> Every number is on the receipt, and <b>Put this back</b> would restore that step of the track if you decide the scene did not go that way.</li>
+  </ul>
+
+  <div class="rule-box"><b>Where to start</b>
+    You do not have to author any of this to play. The seeds cover most stories as they stand. The first thing worth writing yourself is usually a <b>Condition</b> — copy the shape of Intoxicated — and the second is an <b>encounter shape</b> for whatever your story keeps doing that takes more than one roll.</div>
+</section>
+
+<footer>
+  <span>Character Engine</span>
+  <span>Settings › States · Settings › Rolls · Actions</span>
+  <span>Every example is a seeded row you can edit or delete</span>
+</footer>
+
+</div>
+</body>
+</html>
