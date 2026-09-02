@@ -1,0 +1,298 @@
+/*---
+compatibilityVersion: naiscript-1.0
+id: ce000003-0000-0000-0000-000000000006
+name: CE Generation Helper 6
+createdAt: 1793100000000
+updatedAt: 1793200000000
+version: 1.1.1
+author: AmbiProp
+description: |-
+  Lends its token allowance to Character Engine. Install alongside CE, not instead of it.
+  TO ADD MORE
+  1. Export this script.
+  2. Change two things in the header. name, so it ends in the next number. id, so it is unique.
+  3. Import it back. Repeat for as many as you want.
+  There is nothing to edit in the code. The number is read from the name.
+  This script has no interface. Character Engine shows every helper under Settings then Helpers.
+memoryLimit: 8
+---*/
+// ============================================================================
+// CE GENERATION HELPER — a companion script for Character Engine
+// ============================================================================
+// WHAT THIS IS FOR. NovelAI meters a script's generation allowance PER SCRIPT, so a second
+// installed script carries a second allowance. This one owns no state, reads no story of its
+// own accord and renders nothing. It waits for Character Engine to be refused, then spends its
+// own allowance on CE's behalf and hands the result back.
+//
+// It is useless on its own and harmless on its own. With CE absent it answers nobody, spends
+// nothing, and costs one broadcast at load.
+//
+// [HELP-NO-UI] THIS SCRIPT HAS NO INTERFACE, DELIBERATELY. An earlier version rendered a status
+// panel and it was the wrong place for one: a helper's numbers only mean something next to the
+// engine's numbers and next to the other helpers, and that comparison already exists on CE's
+// Settings > Helpers tab. Two surfaces reporting the same state is two things to keep in step,
+// and the one nobody is looking at is the one that goes stale. Everything an author needs —
+// which helpers are answering, what each has left, and the button that clears a stuck one —
+// lives in CE. This file logs and nothing else.
+//
+// ── MAKING MORE OF THEM ─────────────────────────────────────────────────────
+// [HELP-NUMBER-FROM-NAME] THE ORDINAL IS READ OFF THE SCRIPT'S OWN NAME and there is no constant
+// to edit. Copy 1 to make 2: change `name` so it ends in 2, change `id` so it is unique, import.
+// That is the whole procedure, and it is built this way because the obvious alternative — a
+// `const HELPER_NUMBER = 1` at the top — is a THIRD thing to remember on every copy and the one
+// that fails silently. Two helpers left on the same number both still work (CE tie-breaks on
+// script id) but they render two identically named rows, so the mistake is visible on CE's
+// Helpers tab rather than hidden. A name with no trailing number is helper 1.
+//
+// ── THE PROTOCOL  [HELP-PROTOCOL] ───────────────────────────────────────────
+// Six names on the channel 'ce-helper'. CE's SECTION 3k is the other half; they ship together
+// or not at all.
+//   CE_HELP_HELLO  out, on load             { no, label, version, out, inp, story }
+//   CE_HELP_PING   in,  discovery           -> answered with PONG
+//   CE_HELP_PONG   out, to the asker        { ...same, plus busy, gens, lastErr }
+//   CE_HELP_RUN    in,  do this generation  { rid, tag, method, messages, params, storyOpts }
+//   CE_HELP_DONE   out, to the asker        { rid, ok, text, resp, err, out, inp, gens }
+//   CE_HELP_WAKE   in,  clear the latch     -> re-announces
+//
+// [HELP-BUDGET-REPORTED] EVERY MESSAGE OUT CARRIES A LIVE ALLOWANCE READING. getAllowedOutput
+// and getAllowedInput can only be read inside the script they describe, so this is the only
+// place in the system that can answer "can you serve 400 tokens" before a call rather than
+// after one.
+//
+// [HELP-CAPS] `story: true` IS A CAPABILITY CLAIM AND CE READS IT AS ONE. It says this script
+// will honour `method: 'story'` by calling generateWithStory rather than quietly running a plain
+// generate. That distinction matters more than it looks: a story call answered without the story
+// returns confident, well-formed prose about nothing in particular, which is the failure mode
+// that survives review. A helper that cannot make the claim is sent direct calls only.
+//
+// [HELP-LATCH] THE EXHAUSTION LATCH IS A LAST RESORT, NOT THE MECHANISM. CE reads the numbers
+// above before choosing, so it should rarely send a call this script cannot afford. The latch is
+// for when those numbers were right and the call was refused anyway — a rate limit, a server
+// cap, an account ceiling none of the per-script counters describe. Once latched this helper
+// reports out=0 so CE stops choosing it, until a WAKE or a reload. There is no button here to
+// clear it [HELP-NO-UI]; Refresh on CE's Helpers tab sends the WAKE.
+//
+// [HELP-ONE-AT-A-TIME] ONE GENERATION AT A TIME, refused rather than queued. A queue here would
+// make CE's timeout meaningless: a call sitting third in line looks identical to a wedged script
+// from the other side. Refusing immediately lets CE try the next helper while this one works.
+//
+// NO HOOKS ARE REGISTERED. This script must not touch context assembly, the document, or the
+// story. CE owns all of that, and a second script with an opinion about the context would be
+// invisible from CE's side and impossible to debug from this one.
+// ============================================================================
+
+var CEH_VERSION = '1.1.1';
+var CEH_CHANNEL = 'ce-helper';
+
+// [HELP-NUMBER-FROM-NAME] Trailing digits of the script name. 'CE Generation Helper 3' -> 3.
+// No trailing number means 1, so the shipped copy needs no rename to work.
+function cehNumber(): number {
+    try {
+        var cnM = String(api.v1.script.name || '').match(/(\d+)\s*$/);
+        var cnN = cnM ? parseInt(cnM[1], 10) : 1;
+        return (cnN > 0) ? cnN : 1;
+    } catch (eCn) { return 1; }
+}
+
+var CEH_NO = cehNumber();
+var CEH_LABEL = 'Helper ' + String(CEH_NO);
+
+var _cehBusy = false;
+var _cehGens = 0;
+var _cehLastErr = '';
+var _cehLatched = false;      // [HELP-LATCH]
+
+// Guarded because a runtime without these counters must report "unknown" rather than throw.
+// -1 is the unknown sentinel on both sides; CE refuses to delegate to a helper reporting it,
+// which is the safe direction — an unknown allowance is not an available one.
+function cehOut(): number {
+    try { return api.v1.script.getAllowedOutput ? api.v1.script.getAllowedOutput() : -1; }
+    catch (eO) { return -1; }
+}
+function cehIn(): number {
+    try { return api.v1.script.getAllowedInput ? api.v1.script.getAllowedInput() : -1; }
+    catch (eI) { return -1; }
+}
+
+// The one payload shape every outbound message is built from, so a reading cannot be present on
+// one verb and missing on another.
+function cehState(): any {
+    return {
+        no: CEH_NO,
+        label: CEH_LABEL,
+        version: CEH_VERSION,
+        // [HELP-LATCH] A latched helper reports ZERO rather than its real remaining allowance.
+        // That is the whole enforcement: CE's pick is a numeric comparison, so reporting 0 is
+        // how this script takes itself out of rotation without needing a verb for it.
+        out: _cehLatched ? 0 : cehOut(),
+        inp: cehIn(),
+        story: true,                                          // [HELP-CAPS]
+        busy: _cehBusy,
+        gens: _cehGens,
+        lastErr: _cehLastErr
+    };
+}
+
+// [HELP-SEND-VOID] api.v1.messaging.send returns UNDEFINED on this runtime despite being
+// declared Promise<void>, so `send(...).catch(fn)` throws. It did, in the ping handler: the
+// throw was swallowed by cehOnMessage's own catch, so no pong ever went out and Character
+// Engine's Refresh looked like it did nothing at all. Failure is a RETURN VALUE here.
+function cehSend(toSid: string, data: any): string {
+    try {
+        var csR: any = api.v1.messaging.send(toSid, data, CEH_CHANNEL);
+        if (csR && typeof csR.then === 'function') csR.catch(function() {});
+        return '';
+    } catch (eCs) {
+        return String((eCs && (eCs as any).message) || eCs || 'send failed');
+    }
+}
+
+async function cehAnnounce(): Promise<void> {
+    try {
+        var caMsg: any = cehState();
+        caMsg.type = 'CE_HELP_HELLO';
+        caMsg.sid = api.v1.script.id;
+        await api.v1.messaging.broadcast(caMsg, CEH_CHANNEL);
+    } catch (eCa) { api.v1.error('[' + CEH_LABEL + '] announce failed:', eCa); }
+}
+
+// Does the failure look like an allowance wall rather than a bad answer? Matched on the message
+// because NAI throws plain Errors with no code to switch on. CE runs its own classification on
+// the message it receives; this copy exists so the LATCH can be set at the moment of the throw.
+function cehIsWall(msg: string): boolean {
+    var cwM = String(msg || '').toLowerCase();
+    if (!cwM) return false;
+    return cwM.indexOf('budget') >= 0 || cwM.indexOf('limit') >= 0 || cwM.indexOf('quota') >= 0
+        || cwM.indexOf('insufficient') >= 0 || cwM.indexOf('uncached') >= 0
+        || cwM.indexOf('allowance') >= 0 || cwM.indexOf('rate') >= 0
+        || cwM.indexOf('exceed') >= 0 || cwM.indexOf('too many') >= 0
+        || cwM.indexOf('capacity') >= 0 || cwM.indexOf('throttl') >= 0;
+}
+
+async function cehReply(toSid: string, rid: string, body: any): Promise<void> {
+    try {
+        var crMsg: any = cehState();
+        crMsg.type = 'CE_HELP_DONE';
+        crMsg.sid = api.v1.script.id;
+        crMsg.rid = rid;
+        var crK: string;
+        for (crK in body) { crMsg[crK] = body[crK]; }
+        // THE REPLY IS THE WHOLE POINT OF THE CALL. A generation that succeeded and whose
+        // answer never left this script has spent an allowance for nothing, so a failure here
+        // is logged loudly rather than swallowed -- it is the only trace that would remain.
+        var crSendErr = cehSend(toSid, crMsg);
+        if (crSendErr) api.v1.error('[' + CEH_LABEL + '] REPLY FAILED, answer lost: ' + crSendErr);
+    } catch (eCr) { api.v1.error('[' + CEH_LABEL + '] reply failed:', eCr); }
+}
+
+async function cehRun(fromSid: string, d: any): Promise<void> {
+    var crRid = String(d.rid || '');
+
+    // [HELP-ONE-AT-A-TIME] Refused, never queued.
+    if (_cehBusy) {
+        await cehReply(fromSid, crRid, { ok: false, err: 'helper busy with another call' });
+        return;
+    }
+    if (_cehLatched) {
+        await cehReply(fromSid, crRid, { ok: false, err: 'helper allowance exhausted' });
+        return;
+    }
+
+    var crMsgs: any[] = Array.isArray(d.messages) ? d.messages : [];
+    if (!crMsgs.length) {
+        await cehReply(fromSid, crRid, { ok: false, err: 'no messages in request' });
+        return;
+    }
+
+    var crStory = (String(d.method || 'direct') === 'story');
+    _cehBusy = true;
+    try {
+        // PARAMS ARE PASSED THROUGH UNTOUCHED — model, max_tokens, temperature, enable_thinking,
+        // all of it. This script has no opinion about how CE generates and must not acquire one:
+        // a helper that quietly changed a sampler would make a delegated call read differently
+        // from a local one, which is the single thing a transport is not allowed to do. Same for
+        // storyOpts, which carries CE's suppressScriptHooks and contextLimitReduction.
+        // 'background' on both, so a delegated call never blocks the editor the author is in.
+        var crResp: any = crStory
+            ? await api.v1.generateWithStory(crMsgs, d.params || {}, d.storyOpts, undefined, 'background')
+            : await api.v1.generate(crMsgs, d.params || {}, undefined, 'background');
+        var crText = String((crResp && crResp.choices && crResp.choices[0]
+            && (crResp.choices[0].text
+                || (crResp.choices[0].message && crResp.choices[0].message.content))) || '');
+
+        _cehGens++;
+        _cehLastErr = '';
+        // BOTH the raw response and the extracted text. CE prefers the response so its own reader
+        // stays the only place that knows the shape; the text is the fallback for a runtime whose
+        // response object does not survive serialisation.
+        await cehReply(fromSid, crRid, { ok: true, resp: crResp, text: crText });
+        api.v1.log('[' + CEH_LABEL + '] served ' + (crStory ? 'story' : 'direct') + ' '
+            + String(d.tag || 'call') + ' — ' + String(crText.length) + ' chars, '
+            + String(_cehGens) + ' this session, ' + String(cehOut()) + ' output left');
+    } catch (eCg) {
+        var crErr = String((eCg && (eCg as any).message) || eCg || 'unknown generation error');
+        _cehLastErr = crErr;
+        if (cehIsWall(crErr)) {
+            _cehLatched = true;                               // [HELP-LATCH]
+            api.v1.log('[' + CEH_LABEL + '] allowance wall hit, latching: ' + crErr);
+        }
+        await cehReply(fromSid, crRid, { ok: false, err: crErr });
+    } finally {
+        _cehBusy = false;
+    }
+}
+
+function cehOnMessage(msg: any): void {
+    // The handler itself is SYNC and dispatches into a detached async chain. onMessage's callback
+    // may return a promise, but nothing awaits it, so an await here would only make the ordering
+    // look guaranteed when it is not.
+    try {
+        var cmD: any = (msg && msg.data) || {};
+        var cmT = String(cmD.type || '');
+        if (cmT.indexOf('CE_HELP_') !== 0) return;
+        var cmFrom = String((msg && msg.fromScriptId) || cmD.sid || '');
+
+        if (cmT === 'CE_HELP_PING') {
+            if (!cmFrom) return;
+            var cmPong: any = cehState();
+            cmPong.type = 'CE_HELP_PONG';
+            cmPong.sid = api.v1.script.id;
+            cehSend(cmFrom, cmPong);                       // [HELP-SEND-VOID]
+            return;
+        }
+
+        if (cmT === 'CE_HELP_WAKE') {
+            // Clears the latch and re-announces. The reload case and the "my allowance came back"
+            // case are the same case from here, so there is one verb for both.
+            _cehLatched = false;
+            _cehLastErr = '';
+            api.v1.log('[' + CEH_LABEL + '] woken — latch cleared');
+            cehAnnounce().catch(function() {});
+            return;
+        }
+
+        if (cmT === 'CE_HELP_RUN') {
+            if (!cmFrom) return;
+            cehRun(cmFrom, cmD).catch(function(eCr: any) {
+                api.v1.error('[' + CEH_LABEL + '] run failed:', eCr);
+            });
+            return;
+        }
+    } catch (eCm) { api.v1.error('[' + CEH_LABEL + '] message error:', eCm); }
+}
+
+// ── Entry point ─────────────────────────────────────────────────────────────
+// onScriptsLoaded, not module scope: the announcement is a broadcast and CE's listener has to
+// exist to hear it. CE also pings on ITS load, so both orders resolve — whichever script comes
+// up second is the one that closes the loop.
+api.v1.hooks.register('onScriptsLoaded', async () => {
+    try {
+        await api.v1.messaging.onMessage(cehOnMessage, { channel: CEH_CHANNEL });
+        await cehAnnounce();
+        api.v1.log('[' + CEH_LABEL + '] ready — v' + CEH_VERSION
+            + ', script id ' + String(api.v1.script.id)
+            + ', output ' + String(cehOut()) + ', input ' + String(cehIn()));
+    } catch (eInit) {
+        api.v1.error('[' + CEH_LABEL + '] init failed:', eInit);
+    }
+});
