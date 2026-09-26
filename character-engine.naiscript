@@ -4,9 +4,9 @@ id: ce000002-0000-0000-0000-000000000001
 name: Character Engine
 createdAt: 1776400000000
 updatedAt: 1793000000000
-version: 3.14.0
+version: 3.14.1
 author: AmbiProp
-description: Character Engine v3.14.0
+description: Character Engine v3.14.1
 memoryLimit: 128
 ---*/
 
@@ -27,88 +27,88 @@ memoryLimit: 128
 // THE MARKERS: if you add a section, add its line here in the same patch.
 // Line counts are a size signal, not an address. FILE ORDER, top to bottom.
 //
-//   TYPES             1979  every interface and type
-//   CONST             1763  seed catalogs, EVT_* registry, the stores that read them
+//   TYPES             2154  every interface and type
+//   CONST             1877  seed catalogs, EVT_* registry, the stores that read them
 //   SUBSYS               8  banner only -- the subsystem run begins here
-//   LOGGING             71  log channels
+//   LOGGING             52  log channels
 //   LOCKS               88  budget constants, engine locks, and CE_DIAG [DIAG-CUT]
 //   WIZMODE-CLASSIC     14  the classic wizard mode flag [WIZ-CUT] left standing
-//   CHATSAVE          1298  saved chat transcripts -- READ-ONLY since [WIZ-CUT]
-//   GENDIAG            180  budget and generation diagnostics
-//   GENEXEC            158  generation execution: direct wrapper + yoink [GEN-ROUTER]
-//   GENMESH           1380  delegation to companion scripts [HELP-MESH]
-//   SCRIPTVARS          40  script-level state variables
-//   UTIL              1720  utility functions
+//   CHATSAVE          1421  saved chat transcripts -- READ-ONLY since [WIZ-CUT]
+//   GENDIAG            179  budget and generation diagnostics
+//   GENEXEC            157  generation execution: direct wrapper + yoink [GEN-ROUTER]
+//   GENMESH           1379  delegation to companion scripts [HELP-MESH]
+//   SCRIPTVARS          39  script-level state variables
+//   UTIL              1407  utility functions
 //   MODALS              46  native modal helpers
-//   CHARDATA           350  character storage -- and the home mirror on the index entry [SCHED-HOME]
-//   ENTDATA           1199  entity storage
+//   CHARDATA           377  character storage -- and the home mirror on the index entry [SCHED-HOME]
+//   ENTDATA           1241  entity storage
 //   CONFIG             693  global config storage
-//   STATE             2149  state core [SEC:STATE] -- the 'event' scope and band terminals [EVENT]
+//   STATE             2164  state core [SEC:STATE] -- the 'event' scope and band terminals [EVENT]
 //   CLOCK              305  clock core [SEC:CLOCK]
 //   SCHED              706  schedules [SEC:SCHED] -- characters AND location atmosphere, one shape [ATMO];
 //                           the day generator lives here too [SCHED-GEN]
 //   PARTY              140  party state, NPC web, quick-action presets
-//   IMGCFG             180  image settings
+//   IMGCFG             205  image settings
 //   IMGSLOTS           270  per-character image slots [IMG-SLOTS]
-//   LOREBOOK          1327  lorebook helpers
-//   JOURNAL            460  story journal [JOURNAL]
+//   LOREBOOK          1346  lorebook helpers
+//   JOURNAL            484  story journal [JOURNAL]
 //   CHAPTERS           340  chapter bookmarks read off the story's own *** rules [CHAPTERS]
-//   CHARJOURNAL        145  per-character journal [CHARJOURNAL]
-//   CASTLORE           543  Cast, World and the two Species lorebooks; engine-composed, ordered last
+//   CHARJOURNAL        147  per-character journal [CHARJOURNAL]
+//   CASTLORE           581  Cast, World and the two Species lorebooks; engine-composed, ordered last
 //                           via lorebookEntryOrder, whose only writer here is onBeforeContextBuild
 //                           [ROSTER-ALL] [SPEC-LORE]
 //   SNAPSHOT            98  character snapshot generation
-//   INJECTION         1214  context injection builders [SEC:INJECTION]
+//   INJECTION         1128  context injection builders [SEC:INJECTION]
 //   RETIRED-TAGROLL      8  RETIRED marker -- the legacy freeform #tag 1d6 skill check
-//   EVAL               303  the evaluator: one question per cadence, one number moved [EVAL]
-//   DYNAMIC           2424  the dynamic engine -- the shared story block lives here [STORY-BLOCK]
-//   IMGPROMPT          476  image prompt generation
+//   EVAL               360  the evaluator: one question per cadence, one number moved [EVAL]
+//   DYNAMIC           2428  the dynamic engine -- the shared story block lives here [STORY-BLOCK]
+//   IMGPROMPT          494  image prompt generation
 //   STORYIMG           221  story image widgets [STORYIMG]
-//   MESSAGING          848  bridge messaging layer -- the closed protocol lives here
+//   MESSAGING          817  bridge messaging layer -- the closed protocol lives here
 //   WORLDPACK          280  lorebook world-pack
-//   TRAVEL            1060  scene presence, location, equip [SEC:TRAVEL] -- pricing is pure and lives
+//   TRAVEL            1054  scene presence, location, equip [SEC:TRAVEL] -- pricing is pure and lives
 //                           here; UI-MAP is its only surface
-//   SHAREDOPS         1083  shared entity/config/import operations
+//   SHAREDOPS         1084  shared entity/config/import operations
 //   HOOKS              514  hook registrations
-//   STARTUP            254  UI registration and startup
-//   KIT-THEME          609  tokens, fonts, motion, image tokens -- the theme contract [THEME-VAR]. The four
+//   STARTUP            324  UI registration and startup
+//   KIT-THEME          620  tokens, fonts, motion, image tokens -- the theme contract [THEME-VAR]. The four
 //                           measured runtime facts in its header govern every KIT-* section
-//   KIT-STORE          750  stores, ceStoresInit [PANEL-SUBSTRATE], tap guards, ceTabGet/Set, ceNav, shell routes
+//   KIT-STORE          805  stores, ceStoresInit [PANEL-SUBSTRATE], tap guards, ceTabGet/Set, ceNav, shell routes
 //   KIT-MOUNT          225  ceJsxPart, host release, ceScreen, ceHeader, ceSection, ceGroup
-//   KIT-CTRL           487  ceBtn, ceIconBtn, ceBack, ceToggle, ceStepperRow + the kit glyph set [GLYPH-SWAP]
+//   KIT-CTRL           502  ceBtn, ceIconBtn, ceBack, ceToggle, ceStepperRow + the kit glyph set [GLYPH-SWAP]
 //   KIT-GAUGE          521  meters, tracks, day/month strips, gauge rows -- how a bounded number looks [NUM-SHAPE]
 //   KIT-ROW            151  the state row drawn once for both surfaces, ceSettingRow, ceTapRow
-//   KIT-CARD           726  ceRow, ceChip, ceCard, ceRecordCard, ceExpandCard, ceEditSlot, ordering [REC-ORDER];
+//   KIT-CARD           817  ceRow, ceChip, ceCard, ceRecordCard, ceExpandCard, ceEditSlot, ordering [REC-ORDER];
 //                           ceAccordion/ceExpandRow are cross-referenced here, declared in UI-PROFILE
-//   KIT-BOX            259  the twelve primitives replacing hand-rolled h('div',{style}) [SS-BOX]
-//   KIT-FIELD          555  ceField, ceNumField, ceSelect, ceFilterField, live-read helpers [FIELD-LIVE]
-//   KIT-PICK          2155  CE_PICKER_DEFS + _cePickerSurface [PICKER-ONE] [PANEL-PICK], photo and slot-option
+//   KIT-BOX            256  the twelve primitives replacing hand-rolled h('div',{style}) [SS-BOX]
+//   KIT-FIELD          560  ceField, ceNumField, ceSelect, ceFilterField, live-read helpers [FIELD-LIVE]
+//   KIT-PICK          2492  CE_PICKER_DEFS + _cePickerSurface [PICKER-ONE] [PANEL-PICK], photo and slot-option
 //                           surfaces. Anything that chooses one thing out of a list is a def in that table
 //   KIT-PRIMER         846  CE_PRIMER, cePrimerFor, _cePrimerSurface -- the in-surface explanation layer
 //   UI-SCENE           908  Scene [JSXSCENE]
-//   UI-PROFILE        5015  Profile -- also declares ceAccordion/ceExpandRow (kit, sited here)
-//   UI-STORY          1135  Story: Journal + Chapters + Threads
+//   UI-PROFILE        5509  Profile -- also declares ceAccordion/ceExpandRow (kit, sited here)
+//   UI-STORY          1167  Story: Journal + Chapters + Threads
 //   UI-COLORPICK       270  colour picker [COLOR-PICK]
 //   ICONS              627  vector icon library [ICON-LIB]
-//   UI-MAP            2922  World Map -- Map, Hex, Entities, Cast [CAST-TAB], Species [SPEC-LIST], Time
+//   UI-MAP            4028  World Map -- Map, Hex, Entities, Cast [CAST-TAB], Species [SPEC-LIST], Time
 //   UI-HEX-MATH        140  axial math, constants and colour tokens [HEXMAP]
-//   UI-HEX-COLOR       592  cell colour, regions and clipping -- what a cell is painted, where a region ends
+//   UI-HEX-COLOR       583  cell colour, regions and clipping -- what a cell is painted, where a region ends
 //   UI-HEX-AUTO        458  automatic fill and growth; ceHexCarryVehicle [HEX-VH]
 //   UI-HEX-STORE       320  ceHexStore [STORE-BEFORE-HOOK], cePublishHex, _ceHexCanvas
 //   UI-HEX-GEO         290  _ceHexGeoRebuild -- the path cache. No store, no hook, no closure state
 //   UI-HEX-SURFACE    1249  _ceMapHexTab: painting, pointer, controls, selected cell, size and reset
-//   UI-CHAT            623  Chat
-//   UI-SETTINGS       3684  Settings [JSXSETTINGS]
-//   UI-IMAGES         1374  Images
+//   UI-CHAT            615  Chat
+//   UI-SETTINGS       4084  Settings [JSXSETTINGS]
+//   UI-IMAGES         1681  Images
 //   UI-IMGEDIT         289  image edit [IMG-EDIT-SURFACE]
-//   UI-ENTITY         4312  Entity -- and Diplomacy, which is a shell route off the same file
-//   UI-ACTIONS        1778  Actions panel -- a scriptPanel, NOT a shell route [SEC:ACTIONS]
-//   PIPELINE          2275  world pipeline: charter store, question set, prompt substrate
+//   UI-ENTITY         4507  Entity -- and Diplomacy, which is a shell route off the same file
+//   UI-ACTIONS        2025  Actions panel -- a scriptPanel, NOT a shell route [SEC:ACTIONS]
+//   PIPELINE          2406  world pipeline: charter store, question set, prompt substrate
 //                           [CHARTER] [P-SUBSTRATE] [WORLD-PICK] [WORLD-HELPER]
-//   UI-BUILD          2170  Build -- the pipeline's one route [BUILD-ONE-ROUTE]
-//   UI-DOCK           1515  chat dock (kit) [CHAT-DOCK] -- the in-menu surface every chat moves onto,
+//   UI-BUILD          2388  Build -- the pipeline's one route [BUILD-ONE-ROUTE]
+//   UI-DOCK           2090  chat dock (kit) [CHAT-DOCK] -- the in-menu surface every chat moves onto,
 //                           and the ccchat route
-//   BUILDCHAT         2966  build chats [BUILD-CHAT] -- one transcript per scope, never WIZLIVE's path;
+//   BUILDCHAT         2934  build chats [BUILD-CHAT] -- one transcript per scope, never WIZLIVE's path;
 //                           the world, name and seed passes that read them live here too
 //
 // The KIT-* family is the jsx kit, in dependency order: tokens, then stores, then the
@@ -12985,7 +12985,7 @@ async function _ceRollInner(armed: any): Promise<boolean> {
         // exclusive by construction (ceActionPlan zeroes the other), so this is a choice
         // between two numbers rather than a sum that could double-count.
         var actBonus = plan.simple ? plan.freeBonus : spend.bonus;
-        var actBonusLabel = plan.simple ? 'bonus' : spend.label;
+        var actBonusLabel = plan.simple ? 'modifier' : spend.label;
         var res: any = await ceResolve(cfg, actor, plan.approachDefId, armed.resolutionId,
                                         actBonus, actBonusLabel);
         if (!res) return false;
@@ -16075,6 +16075,22 @@ function ceEntityIdentityLine(ent: any, parentName: string): string {
     return n + ' is ' + article + t + (p ? (' inside ' + p) : '') + '.';
 }
 
+// [LOC-PROFILE] THE HEADER AN ENTRY GETS WHEN THE IDENTITY LINE IS EMPTY. Reported live: a
+// place with no "What it is" compiled an entry with no name in it, so its facets read as a
+// continuation of whichever entry came before. The kind-word falls back per type; a type with
+// no sensible word gets its name as a label. Only used when the entry has other content, so
+// the worth-an-entry test in ceEntityLoreText is unchanged and a bare name makes no entry.
+var CE_LORE_HEAD_WORD: any = { location: 'place', item: 'item', faction: 'faction' };
+function ceEntityLoreHead(ent: any, parentName: string): string {
+    var n = String((ent && ent.name) || '').trim();
+    if (!n) return '';
+    var ty = String((ent && ent.type) || '');
+    var w = String(CE_LORE_HEAD_WORD[ty] || '');
+    if (!w) return n + ':';
+    if (ty === 'location') return ceEntityIdentityLine({ name: n, locationType: w }, parentName);
+    return n + ' is ' + _ceArticle(w) + w + '.';
+}
+
 // [LOC-PROFILE] The chain from root down to (not including) this entity, as
 // identity lines. THIS IS WHAT MAKES NESTED GENERATION BEAT GENERATING PLACES IN
 // ISOLATION: generating a room that can see its tavern, its district and its city does
@@ -16171,6 +16187,10 @@ function buildEntityLorebookContent(ent: EntityRecord): string {
         var v = String(cfv[fd.id] || '').trim();
         if (!v) continue;
         parts.push(fd.label + ': ' + v);
+    }
+    if (!idLine && parts.length) {
+        var head = ceEntityLoreHead(ent, String((ent as any)._ceParentName || ''));
+        if (head) parts.unshift(head);
     }
     return parts.join('\n');
 }
@@ -21894,7 +21914,9 @@ async function runDynamicEngine(): Promise<void> {
             if (api.v1.script.getAllowedOutput() < AE_BUDGET_EPH) { _reQueue.push(entry); break; }
             const [_rcId, _rcType] = entry.split(':');
             const _rc = await loadCharacter(_rcId);
-            if (!_rc || _rc.isProtagonist) continue;
+            // [KILL] Inactive is checked here as the main loop checks it off the index: an entry
+            // queued before a kill or an archive is consumed, not run.
+            if (!_rc || _rc.isProtagonist || _rc.active === false) continue;
             let _rcRan = false;
             if (_rcType === 'eph' && _rc.autoThoughtsEnabled) {
                 _dynSpent++; _rcRan = true;
@@ -23158,6 +23180,10 @@ async function buildCharProfilePayload(char: CharacterRecord, cfg: GlobalConfig)
         conceptDump: char.conceptDump || '',
         nicknames: char.nicknames || [],
         species: char.species || '',
+        // [FAC-MEMBER] [PROJECTION-ALLOWLIST] Missing until 3.14.1: the write landed, and the
+        // picker's current() and the identity row both read off this payload, so neither ever
+        // showed it. factionName is stamped beside it by cePublishProfile.
+        factionId: String((char as any).factionId || ''),
         age: char.age || '',
         gender: char.gender || '',
         occupationRole: char.occupationRole || '',
@@ -26502,6 +26528,72 @@ api.v1.hooks.register('onTextAdventureInput', async function(params: any) {
 //                                  re-verified against the live document
 // ============================================================================
 
+// [TRAY-PREFS] WHICH TOOLBAR BUTTONS SHOW. Account-global in api.v1.storage, the same tier as
+// Reduce motion: it is a property of the person, not of the story. Stored as an id -> bool
+// map where an absent id means the item's default, so a new item needs no migration.
+// Route buttons default on, the clock buttons off. The last route button cannot be turned
+// off, because the toolbar is the only way into the engine. A clock item either nudges
+// (mins) or opens World > Time (open), which is where the bigger jumps and Set live.
+var CE_TRAY_PREFS_KEY = 'ce_toolbar_items';
+var _ceTrayPrefs: any = null;
+var CE_TRAY_CLOCK: any[] = [
+    { id: 'clk-hour', label: 'Clock +1 hour', text: '+1h', icon: 'clock',   mins: CE_MINS_HOUR },
+    { id: 'clk-day',  label: 'Clock +1 day',  text: '+1d', icon: 'sunrise', mins: CE_MINS_DAY },
+    { id: 'clk-time', label: 'Time',          text: '',    icon: 'calendar', open: 'time',
+      hint: 'Opens World \u203a Time from the toolbar.' }
+];
+async function ceTrayPrefsLoad(): Promise<any> {
+    if (_ceTrayPrefs) return _ceTrayPrefs;
+    var out: any = {};
+    try {
+        var raw = await api.v1.storage.getOrDefault(CE_TRAY_PREFS_KEY, '');
+        if (raw) {
+            var parsed: any = JSON.parse(String(raw));
+            if (parsed && typeof parsed === 'object') out = parsed;
+        }
+    } catch (eTp) { api.v1.error('[AE:hud] toolbar prefs load:', eTp); }
+    _ceTrayPrefs = out;
+    return out;
+}
+function ceTrayOn(id: string, dflt: boolean): boolean {
+    var p: any = _ceTrayPrefs || {};
+    return (p[id] === undefined) ? dflt : !!p[id];
+}
+async function ceTrayPrefSet(id: string, on: boolean): Promise<void> {
+    var p: any = await ceTrayPrefsLoad();
+    if (!on) {
+        var left = 0;
+        for (var i = 0; i < CE_SHELL_ROUTES.length; i++) {
+            var rt: any = CE_SHELL_ROUTES[i];
+            if (rt.tray === false || rt.id === id) continue;
+            if (ceTrayOn(rt.id, true)) left++;
+        }
+        var isRoute = false;
+        for (var r = 0; r < CE_SHELL_ROUTES.length; r++) { if (CE_SHELL_ROUTES[r].id === id) isRoute = true; }
+        if (isRoute && left === 0) {
+            try { api.v1.ui.toast('Keep at least one \u2014 the toolbar is the way into the engine.',
+                { type: 'warning', autoClose: 3500 }); } catch (eTw) {}
+            return;
+        }
+    }
+    p[id] = !!on;
+    try { await api.v1.storage.set(CE_TRAY_PREFS_KEY, JSON.stringify(p)); }
+    catch (eTs) { api.v1.error('[AE:hud] toolbar prefs save:', eTs); }
+    await registerEngineUI();
+}
+async function ceTrayClockNudge(mins: number): Promise<void> {
+    try {
+        var t = await ceClockNudge(mins);
+        try {
+            var cfg = await loadConfig();
+            api.v1.ui.toast('\ud83d\udd52 ' + ceClockStamp(ceCalendar(cfg), t),
+                { id: 'ce-tb-clock', type: 'info', autoClose: 1800 });
+        } catch (eTt) {}
+        try { await cePublishScene(); } catch (eS) {}
+        try { await cePublishMap(); } catch (eM) {}
+    } catch (e) { api.v1.error('[AE:clock] toolbar nudge:', e); }
+}
+
 async function registerEngineUI(): Promise<void> {
     // [SWEEP] cfg.interfaceMode IS NOW VESTIGIAL EVERYWHERE, not just here. It
     // gated which HUD renderer mounted (bridge / native / both); the native renderer is
@@ -26522,12 +26614,28 @@ async function registerEngineUI(): Promise<void> {
     //
     // KNOWN GAP, not closed: there is no path to an OFF-SCENE character from the toolbar.
     // Scene's own "show all characters" toggle is what closes it and is not built yet.
+    await ceTrayPrefsLoad();
     for (let ceTbI = 0; ceTbI < CE_SHELL_ROUTES.length; ceTbI++) {
         if (CE_SHELL_ROUTES[ceTbI].tray === false) continue;
+        if (!ceTrayOn(CE_SHELL_ROUTES[ceTbI].id, true)) continue;   // [TRAY-PREFS]
         ext.push((function(rt: any) {
             return { type: 'toolbarButton', id: 'ce-tb-' + rt.id, iconId: rt.icon,
                 callback: function() { ceOpenShell(rt.id).catch(function(e) { api.v1.error('[AE:jsxshell] open ' + rt.id + ':', e); }); } };
         })(CE_SHELL_ROUTES[ceTbI]));
+    }
+    // [TRAY-PREFS] The clock buttons, after the routes.
+    for (let ceTcI = 0; ceTcI < CE_TRAY_CLOCK.length; ceTcI++) {
+        if (!ceTrayOn(CE_TRAY_CLOCK[ceTcI].id, false)) continue;
+        ext.push((function(it: any) {
+            return { type: 'toolbarButton', id: 'ce-tb-' + it.id, iconId: it.icon, text: it.text || undefined,
+                callback: function() {
+                    if (it.open) {
+                        ceOpenShell('map', '', String(it.open)).catch(function(e) { api.v1.error('[AE:clock] tray open:', e); });
+                        return;
+                    }
+                    ceTrayClockNudge(Number(it.mins)).catch(function(e) { api.v1.error('[AE:clock] tray:', e); });
+                } };
+        })(CE_TRAY_CLOCK[ceTcI]));
     }
 
     // [CHARCHAT-TRAY] Chat-active controls. The tray is the right home specifically
@@ -31717,6 +31825,23 @@ var CE_PICKER_DEFS: { [k: string]: any } = {
         }
     },
 
+    // [ENTS-MULTI] THE MASS MOVE. The options are built by the caller from the list on screen
+    // and carried in ctx, because the entity store's index is only filled when a record is
+    // open. The caller has already dropped the selection and anything that would close a loop.
+    entityMoveMany: {
+        title: 'Move to',
+        hint: 'Everything selected goes inside what you choose. A worn item is taken off first.',
+        freeLabel: '',
+        clearLabel: 'Top of the world',
+        options: function(ctx: any, src: any): any[] { return (ctx && ctx.opts) || []; },
+        group: function(o: any): string { return String((o && o.where) || ''); },
+        searchMin: 8,
+        current: function(ctx: any, src: any): string { return ''; },
+        commit: function(ctx: any, id: string, label: string): Promise<any> {
+            return ceEntsMoveMany((ctx && ctx.ids) || [], String(id || ''));
+        }
+    },
+
     // Narrative nesting is a SECOND, PARALLEL tree on the same records (plot inside plot),
     // which is why narrativeParentId exists beside parentId at all. Only narratives are
     // offered -- nesting a plot under a room would be a category error the graph has no
@@ -35492,7 +35617,7 @@ function ceProfileStoreInit(): void {
     // reads both on its first render.
     try { ceProfileStore = createStore({ ready: false, charId: '', p: null, tiers: null, cfg: null,
                                          roster: [], vocabSpecies: [], speciesRecs: [],
-                                         factionRecs: [], factionName: '',
+                                         factionRecs: [],
                                          equip: { entityId: '', bodyOk: false, carried: [], candidates: [] },
                                          states: { rows: [], hasDefs: false, isProtag: false },
                                          places: { locId: '', locName: '', list: [] },
@@ -35795,12 +35920,14 @@ async function cePublishProfile(charId: string): Promise<void> {
             states.terminal = twin ? { defId: twin.def.id, name: twin.def.name, note: twin.term.note } : null;
         } catch (eSt) { api.v1.error('[AE:jsxprofile] states read failed:', eSt); }
 
+        // [FAC-MEMBER] ON THE PAYLOAD, because CE_IDENTITY_FIELDS' show key is read as
+        // p[show]. It sat on the store beside p, where nothing read it.
+        if (payload) payload.factionName = factionName;
         ceProfileStore.set({ ready: true, charId: charId, p: payload || null, tiers: tiers,
                              cfg: cfg || null, roster: roster, vocabSpecies: vocabSpecies,
                              speciesRecs: speciesRecs,
-                             // [FAC-MEMBER] Every faction, for the picker; the resolved name,
-                             // for the row that displays it.
-                             factionRecs: factionRecs, factionName: factionName,
+                             // [FAC-MEMBER] Every faction, for the picker.
+                             factionRecs: factionRecs,
                              equip: equip, states: states,
                              dynRank: dynRank, places: places,
                              // [SEC:SCHED] The schedule drill resolves "which plan is today"
@@ -36390,6 +36517,10 @@ async function ceProfileSetLocation(charId: string, locId: string): Promise<void
 //      is deliberately NO separate `deceased` field. Death is expressible in what already
 //      exists (inactive + body in the graveyard), and a second boolean would be a second
 //      answer to "is this character in play" for the five readers of the first one.
+//      autoThoughtsEnabled and hooksEnabled go off in the same write. Reported live: the
+//      Behaviour switches still read On after a kill, and a beat already sitting in the
+//      retry queue fired for the corpse. Reviving through Active leaves them off; the author
+//      turns them back on, which is one tap and says plainly what is running.
 //   4. BODY TO THE GRAVEYARD, created lazily and found by STORED ID. The old version
 //      matched name === 'Graveyard', which made a second graveyard the moment anyone
 //      renamed the first; cfg.graveyardEntityId cannot drift. mapKind 'hidden' keeps it off
@@ -36449,6 +36580,8 @@ async function killCharacter(charId: string): Promise<void> {
 
                 char.active = false;                 // step 3
                 char.scenePresent = false;
+                char.autoThoughtsEnabled = false;
+                char.hooksEnabled = false;
                 await saveCharacter(char);
 
                 if (char.entityId) {                 // step 4
@@ -40531,7 +40664,7 @@ function _ceProfileDangerBlock(charId: string, p: any): any {
     return ceInline({ gap: CE_T.s2, key: 'prof_danger', rule: 'top', padTop: CE_T.s4 }, [
         (isActive && kAsking)
             ? ceProse('t2',
-                'Kill ' + nm + '? Anything they are carrying drops where they are standing, their body goes to the Graveyard, and they stop being active. Everything about them is kept, and the Active switch above brings them back.', { key: 'pk_ask', grow: true, basis: '160px' })
+                'Kill ' + nm + '? Anything they are carrying drops where they are standing, their body goes to the Graveyard, and they stop being active, thinking and escalating hooks. Everything about them is kept, and the Active switch above brings them back.', { key: 'pk_ask', grow: true, basis: '160px' })
             : null,
         (isActive && kAsking)
             ? ceBtn('Kill', 'prof:kill:' + charId, function() {
@@ -45504,7 +45637,9 @@ function _ceEntsNoun(type: string): string {
 // indent four levels past nothing. `dep` is the depth in what is actually on screen.
 // `count` is off for the same reason in reverse: childCount is the world's truth, and "3
 // inside" above no rows at all is a worse lie than saying nothing.
-function _ceEntsRow(e: any, flat: boolean, dep: number, count: boolean, backAddr: any): any {
+// [ENTS-MULTI] pick is null outside select mode. In it the row taps toggle membership
+// instead of opening the record, and the state is written in the trail as words (SS11).
+function _ceEntsRow(e: any, flat: boolean, dep: number, count: boolean, backAddr: any, pick?: any): any {
     var bits: string[] = [_ceEntsNoun(String(e.type || ''))];
     if (flat && e.parentName) {
         bits.push('\u2014 in ' + String(e.parentName));
@@ -45531,7 +45666,9 @@ function _ceEntsRow(e: any, flat: boolean, dep: number, count: boolean, backAddr
             : null,
         label: glyph + String(e.name || 'Unnamed'),
         sub: bits.join('  \u00b7  '),
+        trail: pick ? (pick.on ? '\u2713 Selected' : '') : null,
         onClick: function() {
+            if (pick) { pick.toggle(); return; }
             // [REC-DOOR] [ENT-ID1] A BODY'S ID IS THE CHARACTER'S ID, so a body row opens the
             // PROFILE. This tab wrote that ternary first and it is the kit's now, because
             // two other lists needed the same answer and one of them was getting it wrong.
@@ -45668,6 +45805,110 @@ function ceEntsCreate(type: string, back: any): Promise<any> {
     return ceEntityCreate(t, '', back);
 }
 
+// [ENTS-MULTI] SELECT MODE, the gallery's GAL-MULTI shape on the world list. Module state
+// because the Move picker is a full surface swap: the tab unmounts while it is up, and the
+// selection has to be there when it closes. Leaving the mode clears the set.
+var _ceEntsPick = false;
+var _ceEntsSel: any = {};
+var _ceEntsAsk = false;
+function _ceEntsPickSet(on: boolean): void {
+    _ceEntsPick = !!on; _ceEntsSel = {}; _ceEntsAsk = false;
+    ceUiPatch(function() { return {}; });
+}
+
+// [ENTS-MULTI] WHAT A DEEP DELETE TAKES WITH IT: the selection plus every place and item
+// inside it, followed down through places and items only. People, factions, species and
+// threads inside are not taken; deleteEntity moves them to the top of the world. Works on
+// any list of {id, parentId, type}, so the tab's count and the delete read the same answer.
+var CE_ENTS_DEEP_TYPES: any = { location: 1, item: 1 };
+function _ceEntsDeepSet(list: any[], ids: string[]): string[] {
+    var kids: any = {};
+    var i = 0;
+    for (i = 0; i < (list || []).length; i++) {
+        var m: any = list[i];
+        if (!m || !m.id || !m.parentId) continue;
+        var pk = String(m.parentId);
+        if (!kids[pk]) kids[pk] = [];
+        kids[pk].push(m);
+    }
+    var out: string[] = [];
+    var seen: any = {};
+    var stack: string[] = [];
+    for (i = 0; i < ids.length; i++) { if (ids[i] && !seen[ids[i]]) { seen[ids[i]] = 1; out.push(ids[i]); stack.push(ids[i]); } }
+    while (stack.length) {
+        var cur = stack.pop() as string;
+        var ch: any[] = kids[cur] || [];
+        for (var c = 0; c < ch.length; c++) {
+            var cid = String(ch[c].id);
+            if (seen[cid] || !CE_ENTS_DEEP_TYPES[String(ch[c].type || '')]) continue;
+            seen[cid] = 1; out.push(cid); stack.push(cid);
+        }
+    }
+    return out;
+}
+
+// [ENTS-MULTI] One move per record through the single-record verbs, so a body still
+// refreshes its character and a worn item is still released first, as entityParent does.
+async function ceEntsMoveMany(ids: string[], dest: string): Promise<void> {
+    var moved = 0;
+    for (var i = 0; i < (ids || []).length; i++) {
+        var id = String(ids[i] || '');
+        if (!id || id === dest) continue;
+        try {
+            var e: any = await loadEntity(id);
+            if (!e || String(e.parentId || '') === dest) continue;
+            if (String(e.type || '') === 'item' && e.isEquipped
+                && String(e.equippedToCharId || '') !== dest) {
+                await ceEntitySetEquip(id, false);
+            }
+            await ceEntityWrite(id, 'parentId', dest);
+            moved++;
+        } catch (eMv) { api.v1.error('[AE:map] move ' + id + ' failed:', eMv); }
+    }
+    _ceEntsPickSet(false);
+    try { await cePublishMap(); } catch (eP) {}
+    try { api.v1.ui.toast('Moved ' + moved + '.', { type: 'info', autoClose: 2000 }); } catch (eT) {}
+}
+
+// [ENTS-MULTI] Deepest first, so nothing is re-parented to the top only to be deleted a step
+// later. A body row deletes its character, as Profile's Delete does; everything else goes
+// through the same single-record delete Entity uses.
+async function ceEntsDeleteMany(ids: string[], deep: boolean): Promise<void> {
+    var gone = 0, anyFac = false, anyChar = false;
+    await ceEntityOp(async function() {
+        try {
+            var metas: any[] = await loadEntityIndex();
+            var byId: any = {};
+            for (var m = 0; m < (metas || []).length; m++) { if (metas[m] && metas[m].id) byId[String(metas[m].id)] = metas[m]; }
+            var set: string[] = deep ? _ceEntsDeepSet(metas, ids) : ids.slice();
+            var depthOf = function(id: string): number {
+                var d = 0, cur: any = byId[id], guard = 0;
+                while (cur && cur.parentId && guard++ < 64) { d++; cur = byId[String(cur.parentId)]; }
+                return d;
+            };
+            set.sort(function(a: string, b: string) { return depthOf(b) - depthOf(a); });
+            for (var i = 0; i < set.length; i++) {
+                var id = String(set[i] || '');
+                var meta: any = byId[id];
+                if (!meta) continue;
+                try {
+                    if (String(meta.type || '') === 'character') { await deleteCharacter(id); anyChar = true; }
+                    else if (await _ceEntityDeleteOne(id)) { anyFac = true; }
+                    gone++;
+                } catch (eD) { api.v1.error('[AE:map] delete ' + id + ' failed:', eD); }
+            }
+        } catch (e) { api.v1.error('[AE:map] delete many failed:', e); }
+    });
+    if (anyFac) {
+        try { await ceSyncStandingDefs(); } catch (eF) {}
+        try { await cePublishDiplo(); } catch (eFd) {}
+    }
+    _ceEntsPickSet(false);
+    try { await cePublishMap(); } catch (eP) {}
+    if (anyChar) { try { await cePublishScene(); } catch (eS) {} }
+    try { api.v1.ui.toast('Deleted ' + gone + '.', { type: 'info', autoClose: 2000 }); } catch (eT) {}
+}
+
 function _ceMapEntsTab(st: any, q: string, setQ: any): any {
     var list: any[] = (st.entList || []);
     var needle = ceFilterNeedle(q);
@@ -45729,11 +45970,29 @@ function _ceMapEntsTab(st: any, q: string, setQ: any): any {
     if (winSig !== _ceEntsWinSig) { _ceEntsWinSig = winSig; _ceEntsWin = CE_ENTS_PAGE; }
     var nodes: any[] = [];
     var winN = Math.min(rows.length, _ceEntsWin);
+    // [ENTS-MULTI] The selection is read against what exists, so a record deleted elsewhere
+    // cannot be carried into a Move or a Delete.
+    var chosen: string[] = [];
+    if (_ceEntsPick) {
+        for (i = 0; i < list.length; i++) {
+            if (list[i] && list[i].id && _ceEntsSel[String(list[i].id)]) chosen.push(String(list[i].id));
+        }
+    }
     for (i = 0; i < winN; i++) {
-        nodes.push(_ceEntsRow(rows[i].e, rows[i].flat, rows[i].dep, !typed, backAddr));
+        nodes.push(_ceEntsRow(rows[i].e, rows[i].flat, rows[i].dep, !typed, backAddr,
+            _ceEntsPick ? (function(rid: string) {
+                return { on: !!_ceEntsSel[rid], toggle: function() {
+                    if (_ceEntsSel[rid]) { delete _ceEntsSel[rid]; } else { _ceEntsSel[rid] = 1; }
+                    _ceEntsAsk = false;
+                    ceUiPatch(function() { return {}; });
+                } };
+            })(String(rows[i].e.id)) : null));
     }
     var hidden = rows.length - winN;
     var kids: any[] = [];
+    if (_ceEntsPick) {
+        kids.push(_ceEntsPickBar(list, rows, winN, chosen));
+    } else {
     // [ENTS-NEW]
     kids.push(ceInline({ gap: CE_T.s2, key: 'ents_new' }, [
         ceSelect({
@@ -45746,8 +46005,12 @@ function _ceMapEntsTab(st: any, q: string, setQ: any): any {
         }),
         ceBtn('+ Create', 'map:ents:new', function() {
             return ceEntsCreate(_ceEntsNewType, backAddr);
-        }, 'primary', 'Creating\u2026')
+        }, 'primary', 'Creating\u2026'),
+        list.length
+            ? ceBtn('Select', 'map:ents:pickon', function() { _ceEntsPickSet(true); return Promise.resolve(); })
+            : null
     ]));
+    }
     var chipRow = _ceEntsTypeChips(list, picked);
     if (chipRow) kids.push(chipRow);
     kids.push(ceWrap({ key: 'ents_flt' }, [
@@ -45790,6 +46053,80 @@ function _ceMapEntsTab(st: any, q: string, setQ: any): any {
         ])));
     }
     return ceStack(CE_T.s2, kids);
+}
+
+// [ENTS-MULTI] THE BAR REPLACES THE CREATE ROW while selecting, the gallery's arrangement.
+// "Select all shown" names only the rows the window has painted. Delete asks first and
+// offers both depths by name, so the second press says exactly what goes
+// (DESTRUCTIVE-NEVER-IN-PLACE).
+function _ceEntsPickBar(list: any[], rows: any[], winN: number, chosen: string[]): any {
+    var n = chosen.length;
+    var deepN = n ? (_ceEntsDeepSet(list, chosen).length - n) : 0;
+    var moveOpen = function(): Promise<any> {
+        var byId: any = {};
+        var k = 0;
+        for (k = 0; k < list.length; k++) { if (list[k] && list[k].id) byId[String(list[k].id)] = list[k]; }
+        var opts: any[] = [];
+        for (k = 0; k < list.length; k++) {
+            var c: any = list[k];
+            if (!c || !c.id || _ceEntsSel[String(c.id)]) continue;
+            var loops = false;
+            for (var j = 0; j < chosen.length; j++) {
+                if (ceMapWouldCycle(byId, chosen[j], String(c.id))) { loops = true; break; }
+            }
+            if (loops) continue;
+            opts.push({ id: String(c.id), label: String(c.name || 'Unnamed'),
+                        sub: _ceEntsNoun(String(c.type || '')), where: String(c.parentName || '') });
+        }
+        cePickerOpen('entityMoveMany', { ids: chosen.slice(), opts: opts });
+        return Promise.resolve();
+    };
+    return ceStack({ gap: CE_T.s2, key: 'ents_pick' }, [
+        ceInline({ gap: CE_T.s2, key: 'ents_pick_row' }, [
+            ceSub('t3', n ? (String(n) + ' selected') : 'Tap rows to select them',
+                  { grow: true, basis: '120px' }),
+            ceBtn('Select all shown', 'map:ents:selall', function() {
+                var next: any = {};
+                for (var v = 0; v < winN; v++) { next[String(rows[v].e.id)] = 1; }
+                _ceEntsSel = next; _ceEntsAsk = false;
+                ceUiPatch(function() { return {}; });
+                return Promise.resolve();
+            }),
+            n ? ceBtn('Clear', 'map:ents:selnone', function() {
+                _ceEntsSel = {}; _ceEntsAsk = false;
+                ceUiPatch(function() { return {}; });
+                return Promise.resolve();
+              }) : null,
+            (n && !_ceEntsAsk) ? ceBtn('Move\u2026', 'map:ents:move', moveOpen) : null,
+            (n && !_ceEntsAsk) ? ceBtn('Delete\u2026', 'map:ents:delask', function() {
+                _ceEntsAsk = true;
+                ceUiPatch(function() { return {}; });
+                return Promise.resolve();
+              }, 'danger') : null,
+            ceBtn('Done', 'map:ents:pickoff', function() { _ceEntsPickSet(false); return Promise.resolve(); })
+        ]),
+        (n && _ceEntsAsk)
+            ? ceInline({ gap: CE_T.s2, key: 'ents_pick_ask' }, [
+                ceProse('t2', 'Delete ' + n + '? Characters among them are deleted with their images. '
+                    + (deepN
+                        ? ('Inside them are ' + deepN + ' more places and items. Keep those and they move to the top of the world.')
+                        : 'Anything inside them moves to the top of the world.')
+                    + ' People and factions inside are never deleted this way. This cannot be undone.',
+                    { grow: true, basis: '160px' }),
+                ceBtn('Delete ' + n, 'map:ents:delgo', function() {
+                    return ceEntsDeleteMany(chosen.slice(), false);
+                }, 'danger'),
+                deepN ? ceBtn('Delete ' + (n + deepN) + ' with what is inside', 'map:ents:deldeep', function() {
+                    return ceEntsDeleteMany(chosen.slice(), true);
+                  }, 'danger') : null,
+                ceBtn('Keep them', 'map:ents:delno', function() {
+                    _ceEntsAsk = false;
+                    ceUiPatch(function() { return {}; });
+                    return Promise.resolve();
+                })
+              ])
+            : null
+    ]);
 }
 
 // [SPEC-RECORD] MAP TAB: Species  [SPEC-LIST]
@@ -54435,9 +54772,40 @@ function _ceSettingsThoughts(confirm: string): any {
     ]));
 }
 
+// [TRAY-PREFS] Beside Interface, the same tier: about the person, and every story.
+function _ceSettingsToolbar(): any {
+    var rows: any[] = [];
+    var i = 0;
+    for (i = 0; i < CE_SHELL_ROUTES.length; i++) {
+        if (CE_SHELL_ROUTES[i].tray === false) continue;
+        rows.push((function(rt: any) {
+            var on = ceTrayOn(rt.id, true);
+            return ceWrap({ key: 'set:tb:' + rt.id }, [ ceSettingRow(String(rt.label), '',
+                ceToggle(on, 'set:tb:' + rt.id, function() {
+                    return ceTrayPrefSet(rt.id, !on).then(function() { ceSettingsPatch(function() { return {}; }); });
+                }, String(rt.label))) ]);
+        })(CE_SHELL_ROUTES[i]));
+    }
+    for (i = 0; i < CE_TRAY_CLOCK.length; i++) {
+        rows.push((function(it: any) {
+            var on = ceTrayOn(it.id, false);
+            return ceWrap({ key: 'set:tb:' + it.id }, [ ceSettingRow(String(it.label),
+                String(it.hint || 'Moves the story clock forward from the toolbar.'),
+                ceToggle(on, 'set:tb:' + it.id, function() {
+                    return ceTrayPrefSet(it.id, !on).then(function() { ceSettingsPatch(function() { return {}; }); });
+                }, String(it.label))) ]);
+        })(CE_TRAY_CLOCK[i]));
+    }
+    return ceGroup('Toolbar', ceStack(CE_T.s2, [
+        ceSub('t3', 'Which buttons sit above the editor. Applies to every story.', { key: 'set:tb:hint' }),
+        ceStack(CE_T.s2, rows)
+    ]));
+}
+
 function _ceSettingsSystemTab(cfg: any, openMap: any, confirm: string, st: any): any {
     return ceStack(CE_T.s4, [
         _ceSettingsInterface(),
+        _ceSettingsToolbar(),
         _ceSettingsLorebooks(),
         _ceSettingsImportExport(),
         _ceSettingsTiming(cfg),
@@ -58170,6 +58538,20 @@ async function ceEntityCreate(type: string, parentId: string, back: any, seed?: 
 //   for one act, which is the class of duplication this patch exists to remove.
 async function ceEntityDelete(id: string, back: any): Promise<void> {
     try {
+        var wasFaction = await _ceEntityDeleteOne(id);
+        if (wasFaction) {
+            await ceSyncStandingDefs();
+            await cePublishDiplo();
+        }
+        await cePublishMap();
+        if (back && back.surface) { ceNav(String(back.surface), String(back.entityId || '')); }
+        else { ceNav('map'); }
+    } catch (e) { api.v1.error('[AE:jsxentity] delete failed:', e); }
+}
+
+// [ENTS-MULTI] The record half of ceEntityDelete, shared with the mass delete. Returns
+// whether the record was a faction, so the caller can resync standing once for a batch.
+async function _ceEntityDeleteOne(id: string): Promise<boolean> {
         var wasFaction = false;
         var preDel: any = null;
         // [PROFILE-DELETE] ONE READ SERVES BOTH the type question (FAC-SURFACE) and the lorebook id.
@@ -58188,14 +58570,7 @@ async function ceEntityDelete(id: string, back: any): Promise<void> {
             catch (eLb) { api.v1.error('[AE:jsxentity] lorebook remove on delete:', eLb); }
         }
         await deleteEntity(id);
-        if (wasFaction) {
-            await ceSyncStandingDefs();
-            await cePublishDiplo();
-        }
-        await cePublishMap();
-        if (back && back.surface) { ceNav(String(back.surface), String(back.entityId || '')); }
-        else { ceNav('map'); }
-    } catch (e) { api.v1.error('[AE:jsxentity] delete failed:', e); }
+        return wasFaction;
 }
 
 // -- Sections -----------------------------------------------------------------
@@ -60700,7 +61075,8 @@ function _ceEntityIdentityDrill(id: string, ent: any, st: any): any {
         } else {
             kids.push(ceProse('t2', idLine
                 ? ('The lorebook entry opens: \u201c' + idLine + '\u201d')
-                : 'Fill this in and the entry will open with \u201c' + (ent.name || 'Name') + ' is a \u2026\u201d.',
+                : ('Left blank, the entry opens \u201c' + (ceEntityLoreHead(ent, String(st.parentName || ''))
+                    || ((ent.name || 'Name') + ' is a \u2026')) + '\u201d. Fill this in to say what kind.'),
                 { key: 'ent_lt_prev' }));
         }
     }
@@ -62795,11 +63171,11 @@ function _ceActionsSimple(st: any, armed: any): any[] {
         // THE PURCHASED BONUS IS UNTOUCHED IN FULL MODE. Two modes, two answers, and neither
         // is a migration of the other.
         ceStepperRow({
-            k: 'act:free', label: 'Bonus',
+            k: 'act:free', label: 'Modifier',
             value: fb, min: -CE_FREE_BONUS_MAX, max: CE_FREE_BONUS_MAX,
             sub: ceSub('t3', fb === 0
-                ? 'Free \u2014 set how hard this is, and watch what it does to the odds.'
-                : ((fb > 0 ? '+' : '') + fb + ' on the roll. Costs nothing.')),
+                ? 'Up for an easy task, down for a hard one. Watch what it does to the odds.'
+                : ((fb > 0 ? '+' : '') + fb + ' on the roll.')),
             onNudge: function(d: number) {
                 return ceActionArm({ freeBonus: fb + (Number(d) || 0) });
             },
