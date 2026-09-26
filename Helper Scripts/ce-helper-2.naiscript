@@ -4,7 +4,7 @@ id: ce000003-0000-0000-0000-000000000002
 name: CE Generation Helper 2
 createdAt: 1793100000000
 updatedAt: 1793200000000
-version: 1.1.1
+version: 1.1.2
 author: AmbiProp
 description: |-
   Lends its token allowance to Character Engine. Install alongside CE, not instead of it.
@@ -50,8 +50,14 @@ memoryLimit: 8
 //   CE_HELP_HELLO  out, on load             { no, label, version, out, inp, story }
 //   CE_HELP_PING   in,  discovery           -> answered with PONG
 //   CE_HELP_PONG   out, to the asker        { ...same, plus busy, gens, lastErr }
-//   CE_HELP_RUN    in,  do this generation  { rid, tag, method, messages, params, storyOpts }
-//   CE_HELP_DONE   out, to the asker        { rid, ok, text, resp, err, out, inp, gens }
+//   CE_HELP_RUN    in,  do this generation  { rid, tag, method, messages, params, storyOpts, probe? }
+//   CE_HELP_DONE   out, to the asker        { rid, ok, text, resp, err, out, inp, gens, probe? }
+//
+// [HELP-XCACHE] probe IS A FIELD, NOT A SEVENTH VERB. When CE sets probe: true on a RUN, this
+// script reads its own counters immediately either side of the generation and returns them as
+// probe { pred, inBefore, inAfter, outBefore, outAfter, ms }. They have to be read HERE: the
+// question is what THIS script was charged, and only this script can see that. The out/inp on
+// every reply are taken after the reply is built, which is close but not the call's edges.
 //   CE_HELP_WAKE   in,  clear the latch     -> re-announces
 //
 // [HELP-BUDGET-REPORTED] EVERY MESSAGE OUT CARRIES A LIVE ALLOWANCE READING. getAllowedOutput
@@ -81,7 +87,7 @@ memoryLimit: 8
 // invisible from CE's side and impossible to debug from this one.
 // ============================================================================
 
-var CEH_VERSION = '1.1.1';
+var CEH_VERSION = '1.1.2';
 var CEH_CHANNEL = 'ce-helper';
 
 // [HELP-NUMBER-FROM-NAME] Trailing digits of the script name. 'CE Generation Helper 3' -> 3.
@@ -112,6 +118,26 @@ function cehOut(): number {
 function cehIn(): number {
     try { return api.v1.script.getAllowedInput ? api.v1.script.getAllowedInput() : -1; }
     catch (eI) { return -1; }
+}
+
+// [HELP-XCACHE] What this script's cache says the messages would cost, before the call. The
+// typings declare a number and this runtime returns a promise [UNCACHED-ASYNC], so both shapes
+// are accepted; -1 is unknown.
+async function cehUncached(msgs: any[]): Promise<number> {
+    try {
+        if (!api.v1.script.countUncachedInputTokens) return -1;
+        var cuR: any = api.v1.script.countUncachedInputTokens(msgs as any);
+        var cuN: any = (cuR && typeof cuR.then === 'function') ? await cuR : cuR;
+        return (typeof cuN === 'number' && cuN >= 0) ? cuN : -1;
+    } catch (eCu) { return -1; }
+}
+
+// [HELP-XCACHE] Closes a probe reading. Called on BOTH paths, success and throw, so a refused
+// call still reports the allowance it did not spend.
+function cehProbeClose(pr: any, t0: number): void {
+    pr.inAfter = cehIn();
+    pr.outAfter = cehOut();
+    pr.ms = Date.now() - t0;
 }
 
 // The one payload shape every outbound message is built from, so a reading cannot be present on
@@ -205,8 +231,19 @@ async function cehRun(fromSid: string, d: any): Promise<void> {
     }
 
     var crStory = (String(d.method || 'direct') === 'story');
+    var crPr: any = null;                                     // [HELP-XCACHE]
+    var crT0 = 0;
     _cehBusy = true;
     try {
+        if (d.probe === true) {
+            crPr = { pred: await cehUncached(crMsgs), inBefore: -1, inAfter: -1,
+                     outBefore: -1, outAfter: -1, ms: -1 };
+            // Real counters, not cehState's: a latched helper reports out=0 to CE's pick, and a
+            // probe reading has to be the allowance itself.
+            crPr.outBefore = cehOut();
+            crPr.inBefore = cehIn();
+            crT0 = Date.now();
+        }
         // PARAMS ARE PASSED THROUGH UNTOUCHED — model, max_tokens, temperature, enable_thinking,
         // all of it. This script has no opinion about how CE generates and must not acquire one:
         // a helper that quietly changed a sampler would make a delegated call read differently
@@ -216,6 +253,7 @@ async function cehRun(fromSid: string, d: any): Promise<void> {
         var crResp: any = crStory
             ? await api.v1.generateWithStory(crMsgs, d.params || {}, d.storyOpts, undefined, 'background')
             : await api.v1.generate(crMsgs, d.params || {}, undefined, 'background');
+        if (crPr) cehProbeClose(crPr, crT0);                  // [HELP-XCACHE] before anything else
         var crText = String((crResp && crResp.choices && crResp.choices[0]
             && (crResp.choices[0].text
                 || (crResp.choices[0].message && crResp.choices[0].message.content))) || '');
@@ -225,18 +263,23 @@ async function cehRun(fromSid: string, d: any): Promise<void> {
         // BOTH the raw response and the extracted text. CE prefers the response so its own reader
         // stays the only place that knows the shape; the text is the fallback for a runtime whose
         // response object does not survive serialisation.
-        await cehReply(fromSid, crRid, { ok: true, resp: crResp, text: crText });
+        var crBody: any = { ok: true, resp: crResp, text: crText };
+        if (crPr) crBody.probe = crPr;
+        await cehReply(fromSid, crRid, crBody);
         api.v1.log('[' + CEH_LABEL + '] served ' + (crStory ? 'story' : 'direct') + ' '
             + String(d.tag || 'call') + ' — ' + String(crText.length) + ' chars, '
             + String(_cehGens) + ' this session, ' + String(cehOut()) + ' output left');
     } catch (eCg) {
         var crErr = String((eCg && (eCg as any).message) || eCg || 'unknown generation error');
+        if (crPr && crPr.inAfter < 0) cehProbeClose(crPr, crT0 || Date.now());   // [HELP-XCACHE]
         _cehLastErr = crErr;
         if (cehIsWall(crErr)) {
             _cehLatched = true;                               // [HELP-LATCH]
             api.v1.log('[' + CEH_LABEL + '] allowance wall hit, latching: ' + crErr);
         }
-        await cehReply(fromSid, crRid, { ok: false, err: crErr });
+        var crErrBody: any = { ok: false, err: crErr };
+        if (crPr) crErrBody.probe = crPr;
+        await cehReply(fromSid, crRid, crErrBody);
     } finally {
         _cehBusy = false;
     }
