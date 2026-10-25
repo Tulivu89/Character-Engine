@@ -1,6 +1,6 @@
 # CE-INDEX
 
-Engine: 3.14.8
+Engine: 3.14.9
 
 The grep directory for `character-engine.naiscript`: subject, token, the rule in one line. The reasoning lives at the code under each token -- `grep '\[TOKEN\]'` finds it. This file is a locator, not a second copy of the comments; a line that grows into an explanation should move to its site.
 
@@ -135,6 +135,7 @@ Update this file in the same patch as any change it describes.
 - `SCOPE-COUNT-HONEST` -- the count SEEDS ROWS rather than being remembered as a number
 - `NAME-CALL` -- PROMPTS 4 -- the name is its OWN call, on its own MACHINE-family head
 - `NAME-POOL-WORLD` -- the pool is WORLD-WIDE, not per rung
+- `NAME-POOL-KIND` -- and PER KIND: characters from the character index, every other kind from the entity index by type. It read locations for every kind
 - `NAME-APPEND-ONLY` -- the pool grows by APPENDING, oldest first, so call n's prompt is call n-1's plus text
 - `NAME-CLEAN` -- PROMPTS 4.7 in order, with two corrections found by running it: FENCES COME OFF BEFORE THE LINE IS PICKED (a fenced reply's first line is the fence
 - `NAME-ROOT` -- the spec's rule and the spec's example DISAGREE and both are implemented
@@ -194,8 +195,10 @@ Update this file in the same patch as any change it describes.
 - `BUILD-COPY` -- every stage states WHAT IT PRODUCES and where that goes, via ceStagePreamble's three REQUIRED parts -- which is the only durable answer to a surface whose whole
 - `BUILD-CHROME` -- _ceBuildScope is ONE renderer for every kind
 - `BUILD-CHROME-READS` -- the renderer was kind-clean and THE DATA READS WERE NOT. The draft queue, the committed index, the commit call and the shape picker all named 'location'
+- `BUILD-COMMIT-SCOPE` -- Commit writes the rows ON SCREEN: _ceBuildScope collects its non-queued row ids and commitStagedDrafts takes them. It committed every draft of the kind
 - `BUILD-SCOPE-HOIST` -- `kdef` is declared ABOVE the loops that read it -- `var` hoists the declaration and not the value
 - `KIND-SCOPE` -- THE SCALE VOCABULARY BELONGS TO THE KIND, and which kinds have one is MEASURED off the facet tables rather than declared declaring a vocabulary before the stage that reads it is a parked field
+- `KIND-SCOPE-FACETS` -- a scope is valid for a kind when its scope table OR its catalog's base facets use it; the table alone turned a species list's own scope into 'any'
 - `KIND-NOUN` -- THE ROUTE'S WORD FOR A RECORD IS READ FROM CE_ENTITY_CATALOGS; the SEED pass had the location vocabulary NAME-KIND already fixed in the name pass: `noun` fell to 'Place' for every ladderless kind
 - `NAV-TAB-QUALIFIED` -- ceNav writes a QUALIFIED 'surface:id' tab, the shape ceTabGet reads
 - `STAGE-COUNT` -- the stage picker numbered by INDEX into CE_BUILD_STAGES and sized by its length, both of which count `built: false` entries
@@ -242,6 +245,7 @@ Update this file in the same patch as any change it describes.
 - `BUILD-KINDS` -- a stage is a KIND plus three facts: recursive, ladder, lists. Species divides into two lists, which is not depth
 - `KIND-LIST` -- A FLAT KIND THAT STILL DIVIDES, and `lists` is now the TABLE rather than the string 'species' that nothing read
 - `KIND-LIST-FALLBACK` -- a draft carrying no list lands on the FIRST list, ceSpeciesList's own additive rule
+- `KIND-LIST-ADDR` -- a list kind is addressed by LIST in every pass: its chat (_ceScopeChatAddr), the set it is asked (_ceKindAskScope), the drafts a pass reads (_ceDraftOnList)
 - `KIND-SHAPE-WRITE` -- ceScopeShapeWrite branches on the RUNG, not the kind, because that is what ceKindShape's read does
 - `KIND-LADDER` -- A LADDER PER RECURSIVE KIND, and FACTIONS HAVE ONE. Recursion and a ladder are still separate facts -- parent context comes from the ancestor digest
 - `SCOPE-PER-KIND` -- one scope pointer per recursive kind, keyed off STORAGE_BUILD_SCOPE with a suffix
@@ -561,6 +565,15 @@ Update this file in the same patch as any change it describes.
 - `ICON-WEIGHT` -- `sw` is a stroke in SOURCE units, for line art authored as fills
 - `ICON-TWO-SETS` -- the kit glyph set and CE_ICON_LIB are addressed differently -- a function name versus a string an entity stored -- so only one of them can never be renamed
 
+### Prompt Bench
+
+- `BENCH` -- a prompt is tested by what it DOES: one live prompt, a fixed input, CE_BENCH_RUNS runs, each answer checked in code against the test's one-sentence contract. Settings > Bench
+- `BENCH-INPUTS` -- a test calls the LIVE builders fed its fixture. The `...From` twins (ceEvalMessages, ceWorldSpanFrom, ceBuildChatMessagesFrom, ceWorldExtractParams) exist so no bench restates a prompt
+- `BENCH-FIXTURE` -- fixtures use nouns no story uses and are never lifted from a failing input; each pair differs by ONE fact
+- `BENCH-TRANSPORT` -- each test uses its prompt's own transport. The world suite goes through generateWithStory and is run in an empty story
+- `BENCH-INFRA` -- a transport failure stops the test and is reported apart from the count; it is not a failing run
+- `STORAGE_BENCH` -- tempStorage `ce_bench_v1`: this session's counts. They leave through Export and never touch the story file
+
 ## Measured platform facts
 
 Runtime facts the typings do not state, measured by probes that no longer exist [DIAG-CUT]. No code site by nature; kept because the answer is what was worth keeping.
@@ -579,6 +592,7 @@ Anything else that is unreachable is a bug, not an entry here.
 
 ## Known staleness
 
+- [BENCH-TRANSPORT] The world, name and seed passes go through `aeDiagGenerateWithStory`, so the open story's built context sits in front of every Build prompt. Unchanged in 3.14.9; BUILD2 phase 1 decides it.
 - [CHARTER-AN] [VOICE-SPLIT] The two `an`-targeted wizard sections (ATTG, Style) are gone from the defaults; they survive only in worlds written before that, still reaching the Author's Note through `ceAuthorNoteBody`'s fallback. `ceWorldIsVoice` keeps them out of the pipeline. The fallback goes when the last such story does.
 - Resolutions do not rewind: stateValues live in storyStorage and Undo rewinds historyStorage, so an undone turn keeps the damage. `onHistoryNavigated` is where a continuityId-keyed reversal would go.
 - [ROLL-WRITES] `ceRollNow` calls `ceWriteMoveToStory` itself; the Write button remains for the case that call fails. If that path proves dead, the button goes.

@@ -4,9 +4,9 @@ id: ce000002-0000-0000-0000-000000000001
 name: Character Engine
 createdAt: 1776400000000
 updatedAt: 1793000000000
-version: 3.14.8
+version: 3.14.9
 author: AmbiProp
-description: Character Engine v3.14.8
+description: Character Engine v3.14.9
 memoryLimit: 128
 ---*/
 
@@ -110,6 +110,8 @@ memoryLimit: 128
 //                           and the ccchat route
 //   BUILDCHAT         2934  build chats [BUILD-CHAT] -- one transcript per scope, never WIZLIVE's path;
 //                           the world, name and seed passes that read them live here too
+//   BENCH              379  prompt bench [BENCH] -- live prompts on fixed inputs, counted per run;
+//                           the Settings > Bench tab
 //
 // The KIT-* family is the jsx kit, in dependency order: tokens, then stores, then the
 // primitives that read them. The subsystem run (LOGGING..CENSUS) is a SUBJECT grouping,
@@ -2577,6 +2579,9 @@ var STORAGE_BUILD_CHATS       = 'ce_build_chats_v1';
 // [SCOPE-DEPTH] tempStorage — which location's children the Build route is working on.
 // '' is the top rung. Session-only by WORLDPIPE 7.5's rule.
 var STORAGE_BUILD_SCOPE       = 'ce_build_scope';
+// [BENCH] tempStorage — { results: { 'suite:test': run record } }. This session's bench
+// counts. They leave through Export and never touch the story file.
+var STORAGE_BENCH             = 'ce_bench_v1';
 var STORAGE_WIZLIVE_CAT       = 'ae_wizlive_cat_id';   // [CE-CHATS] storyStorage — cached id of the "CE Chats" lorebook category (find-or-create; falls back to a categories() scan by name if the cache misses).
 var STORAGE_CC_CTX_CAT        = 'ae_cc_ctx_cat_id';     // [CHARCHAT-CTX] storyStorage — cached CE Chat Context category id
 var STORAGE_CC_CTX_MODE       = 'ae_cc_ctx_mode';       // [CHARCHAT-CTX] Record<threadEntryId, 'off'|'summary'|'transcript'> — which threads reach story context
@@ -20329,6 +20334,33 @@ function ceEvalPrompt(def: any, subjectName: string, lastEvidence: string): stri
 // Returns true when something moved. Never throws: a failed evaluator must not take the
 // dynamic pass down with it, and must not stamp -- an unstamped evaluator is simply due again
 // next pass, which is the retry.
+// [BENCH-INPUTS] THE EVALUATOR'S CALL, AS FUNCTIONS OF ITS INPUTS. ceEvalRun resolves the
+// inputs; these build the call and read the reply. The bench feeds the same three a fixture, so
+// a count it reports is a count for the prompt a live pass sends.
+// Cooler than the beat pass's 0.6. This call writes no prose and has no voice to match; every
+// degree of temperature here is a degree of classification noise.
+function ceEvalParams(): any {
+    return { model: 'glm-4-6', max_tokens: AE_BUDGET_EVAL, temperature: 0.3 };
+}
+function ceEvalMessages(def: any, who: string, seen: string, storyBlock: string): any[] {
+    return [ { role: 'system', content: _ceStoryBlockSysFrom(storyBlock, ceEvalPrompt(def, who, seen)) },
+             { role: 'user', content: '\n```json\n' } ];
+}
+// The one reader of a reply. `picked` is the matched outcome record; null covers the no-op, an
+// unknown word and a reply with no JSON, which `parsed` and `outcome` tell apart.
+function ceEvalReadOutcome(text: string, def: any): any {
+    var outs: any[] = ((def && def.outcomes) || []).filter(function(o: any) { return o && o.id; });
+    var parsed: any = null;
+    try { parsed = extractJSON(String(text || '')); } catch (eJ) { parsed = null; }
+    if (!parsed) return { parsed: false, outcome: '', evidence: '', picked: null };
+    var got = String((parsed.outcome || '')).trim().toLowerCase();
+    var picked: any = null;
+    for (var i = 0; i < outs.length; i++) {
+        if (String(outs[i].id).trim().toLowerCase() === got) { picked = outs[i]; break; }
+    }
+    return { parsed: true, outcome: got, evidence: String(parsed.evidence || '').trim(), picked: picked };
+}
+
 async function ceEvalRun(def: any, cfg: any): Promise<boolean> {
     if (!def || !def.id) return false;
     var outs: any[] = (def.outcomes || []).filter(function(o: any) { return o && o.id; });
@@ -20346,34 +20378,23 @@ async function ceEvalRun(def: any, cfg: any): Promise<boolean> {
     if (!who) who = 'the protagonist';
 
     var seen = await _ceEvalSeen(String(def.id));
-    var sys = ceEvalPrompt(def, who, seen);
 
     var resp: any = null;
     try {
         resp = await aeDiagGenerate('eval:' + String(def.id),
-            [ { role: 'system', content: ceStoryBlockSys(sys) },
-              { role: 'user', content: '\n```json\n' } ],
-            // Cooler than the beat pass's 0.6. This call writes no prose and has no voice to
-            // match; every degree of temperature here is a degree of classification noise.
-            { model: 'glm-4-6', max_tokens: AE_BUDGET_EVAL, temperature: 0.3 }
-        );
+            ceEvalMessages(def, who, seen, ceStoryBlockText()), ceEvalParams());
     } catch (eGen) { api.v1.error('[AE:eval] generate:', eGen); return false; }
 
-    var parsed: any = null;
-    try { parsed = extractJSON((resp && resp.choices && resp.choices[0] && resp.choices[0].text) || ''); }
-    catch (eJ) { parsed = null; }
-    if (!parsed) { aeLog('[AE:eval] no JSON back for ' + def.id); return false; }
+    var read: any = ceEvalReadOutcome((resp && resp.choices && resp.choices[0] && resp.choices[0].text) || '', def);
+    if (!read.parsed) { aeLog('[AE:eval] no JSON back for ' + def.id); return false; }
 
     // [EVAL-NOOP] Anything unrecognised coerces to the no-op, the same call _ceApplyPressure
     // makes: a malformed reply must never move a value. The failure directions are not
     // symmetric -- a missed step is invisible and recoverable, a phantom step is a number the
     // author cannot explain and did not earn.
-    var got = String((parsed.outcome || '')).trim().toLowerCase();
-    var picked: any = null;
-    for (var i = 0; i < outs.length; i++) {
-        if (String(outs[i].id).trim().toLowerCase() === got) { picked = outs[i]; break; }
-    }
-    var evidence = String(parsed.evidence || '').trim();
+    var got = String(read.outcome || '');
+    var picked: any = read.picked;
+    var evidence = String(read.evidence || '');
     if (!picked) {
         if (got && got !== CE_EVAL_NOOP) {
             aeLog('[AE:eval] ' + def.id + ' returned unknown outcome "' + got + '", coerced to no-op');
@@ -20792,9 +20813,14 @@ function ceStoryBlockTail(): string {
 // EVERY GENERATOR IN A PASS CALLS THIS. A call site that builds its own system string is a call
 // site that silently leaves the pass's prefix, which is the failure this replaces.
 function ceStoryBlockSys(sys: string): string {
-    var blk = _ceSBText;
-    if (!blk) return String(sys || '');
-    return 'Story so far:\n' + blk + '\n\n' + String(sys || '');
+    return _ceStoryBlockSysFrom(_ceSBText, sys);
+}
+// [BENCH-INPUTS] The same frame over a block the caller supplies, so a bench fixture reaches
+// the model framed exactly as a live story does.
+function _ceStoryBlockSysFrom(blk: string, sys: string): string {
+    var b = String(blk || '');
+    if (!b) return String(sys || '');
+    return 'Story so far:\n' + b + '\n\n' + String(sys || '');
 }
 
 // [PROBE-RESIDUE-47] ceStoryBlockReset IS DELETED. Every one of its three callers was a
@@ -52763,6 +52789,7 @@ function _ceChatRoot(props?: any): any {
 //                       Generation style and timing, Lorebooks, Import/export, Diagnostics,
 //                       Theme tokens, Character thoughts, Reset
 //   Settings > Helpers  [HELP-MESH] the companion scripts lending their token allowance
+//   Settings > Bench    [BENCH] the engine's prompts run on fixed inputs and counted
 //
 // TABS ARE ceTabGet / ceTabSet (SECTION KIT-STORE), NOT ceNav. ceNav resets entityId/back on
 // every call, which is correct for SURFACE navigation and wrong for a tab switch within
@@ -52806,6 +52833,8 @@ function ceSettingsStoreInit(): void {
             // [HELP-XCACHE] Module state copied in by _ceXcachePublish; declared here per
             // STORE-BEFORE-HOOK.
             xcache: null,
+            // [BENCH] Module state copied in by _ceBenchPublish, same reason.
+            bench: null,
         });
     } catch (e) { api.v1.error('[AE:jsxsettings] store init failed:', e); }
 }
@@ -52894,6 +52923,7 @@ async function cePublishSettings(): Promise<void> {
             var evC: any = evSid ? await loadCharacter(evSid) : null;
             evWho = String((evC && evC.name) || '');
         } catch (eEv) { api.v1.error('[AE:jsxsettings] evaluator read failed:', eEv); }
+        await ceBenchLoad();                                // [BENCH] once per session
         ceSettingsPatch(function() {
             return {
                 ready: true, cfg: cfg,
@@ -52902,7 +52932,8 @@ async function cePublishSettings(): Promise<void> {
                 castLore: clSt, clLocs: clLocs, clPreview: clPreview,
                 evals: evList, evalWho: evWho,
                 helpers: hpList, helpLocal: hpLocal, helpDry: _ceHelpLocalDry(),
-                xcache: _ceXcacheSnapshot()                   // [HELP-XCACHE]
+                xcache: _ceXcacheSnapshot(),                  // [HELP-XCACHE]
+                bench: _ceBenchSnapshot()                     // [BENCH]
             };
         });
     } catch (e) {
@@ -53164,7 +53195,10 @@ var CE_SETTINGS_TABS: any[] = [
     // knobs, and this is a list of OTHER installed scripts with their own allowances. It is
     // also the screen an author is sent to when a generation fails for budget, which is not
     // a place to arrive three folds down.
-    { id: 'helpers',  label: 'Helpers' }
+    { id: 'helpers',  label: 'Helpers' },
+    // [BENCH] The tool's own instrument, so Settings and not Rules: it measures the engine's
+    // prompts and reads nothing about this story's world.
+    { id: 'bench',    label: 'Bench' }
 ];
 // ── Measures (evaluators)  [EVAL] ────────────────────────────────────────────
 // THE FORM EDITS evaluators[0] AND SAYS SO. [EVAL-PLURAL] keeps the record plural; this
@@ -57273,6 +57307,7 @@ function _ceSettingsRoot(props?: any): any {
     var body: any;
     if (resolvedTab === 'general') { body = _ceSettingsGeneralTab(cfg, openMap, confirm, st); }
     else if (resolvedTab === 'helpers') { body = _ceSettingsHelpersTab(cfg, st); }
+    else if (resolvedTab === 'bench') { body = _ceSettingsBenchTab(st, openMap); }
     else if (resolvedTab === 'context') { body = _ceSettingsContextTab(st, openMap, cfg); }
     else if (resolvedTab === 'states') { body = _ceSettingsStatesTab(cfg, openMap, confirm); }
     else if (resolvedTab === 'rolls') { body = _ceSettingsRollsTab(cfg, openMap, confirm); }
@@ -66561,25 +66596,29 @@ function ceWorldHelper(sec: any): string {
 // sentence, no markdown" into a chat that is not writing the field.
 async function ceWorldQuestionBlock(): Promise<string> {
     try {
-        var qs: any[] = await ceWorldQuestions();
-        var lines: string[] = [];
-        for (var i = 0; i < qs.length; i++) {
-            if (!qs[i] || !qs[i].enabled) continue;
-            if (String(qs[i].target || '') === 'an') continue;
-            var lab = String(qs[i].label || '').trim();
-            if (!lab) continue;
-            lines.push('- ' + lab + ' \u2014 ' + String(ceWorldHelper(qs[i]) || '').trim());
-        }
-        if (!lines.length) return '';
-        return 'THE QUESTIONS THIS STORY HAS\n' + lines.join('\n')
-             + '\n\nThese are separate fields and each is written from this conversation '
-             + 'alone. Two of them answering the same way is the one failure that cannot be '
-             + 'repaired later, so when the author settles something, settle it under ONE of '
-             + 'these and move on.';
+        return ceWorldQuestionBlockFrom(await ceWorldQuestions());
     } catch (eWq) {
         api.v1.error('[AE:world] question block failed:', eWq);
         return '';
     }
+}
+// [BENCH-INPUTS] The block over a question list the caller supplies. The live chat and the
+// bench both build it here, so a fixture's conversation is told what a story's is.
+function ceWorldQuestionBlockFrom(qs: any[]): string {
+    var lines: string[] = [];
+    for (var i = 0; i < (qs || []).length; i++) {
+        if (!qs[i] || !qs[i].enabled) continue;
+        if (String(qs[i].target || '') === 'an') continue;
+        var lab = String(qs[i].label || '').trim();
+        if (!lab) continue;
+        lines.push('- ' + lab + ' \u2014 ' + String(ceWorldHelper(qs[i]) || '').trim());
+    }
+    if (!lines.length) return '';
+    return 'THE QUESTIONS THIS STORY HAS\n' + lines.join('\n')
+         + '\n\nThese are separate fields and each is written from this conversation '
+         + 'alone. Two of them answering the same way is the one failure that cannot be '
+         + 'repaired later, so when the author settles something, settle it under ONE of '
+         + 'these and move on.';
 }
 
 function ceWorldScope(sec: any): string {
@@ -66723,9 +66762,9 @@ var CE_LADDER_SCOPES: any[] = [
 // needs. A KIND WITH NO ENTRY HERE RENDERS NO PICKER and resolves to 'any', which is what
 // ceSeedDefs already did for it by falling through.
 //
-// ONLY LOCATION IS LISTED. Species' two lists are a real scope pair and will land here with
-// the Species stage; declaring them before the stage reads them would be the parked field
-// this comment is about, one layer up.
+// ONLY LOCATION IS LISTED, because only a location has a scale PICKER. Species' two lists
+// carry their scopes on CE_BUILD_KINDS.kin, and ceKindScopeOk validates those against the
+// facet table itself [KIND-SCOPE-FACETS].
 var CE_KIND_SCOPES: any = {
     location: CE_LADDER_SCOPES
 };
@@ -66733,11 +66772,21 @@ function ceKindScopes(kind: string): any[] {
     var l: any = CE_KIND_SCOPES[String(kind || '')];
     return Array.isArray(l) ? l : [];
 }
+// [KIND-SCOPE-FACETS] VALID MEANS THE KIND'S OWN FACETS USE IT, which is the measurement
+// KIND-SCOPE describes above. Checking the picker table alone turned a species list's 'people'
+// and 'beast' into 'any', so both lists were asked all thirteen species questions. A location's
+// answer does not change: its facet scopes are exactly the picker's ids.
 function ceKindScopeOk(kind: string, s: string): string {
-    var list: any[] = ceKindScopes(kind);
     var v = String(s || '');
+    if (!v || v === 'any') return 'any';
+    var list: any[] = ceKindScopes(kind);
     for (var i = 0; i < list.length; i++) {
         if (String(list[i].id) === v) return v;
+    }
+    var cat: any = ceEntityCatalog(String(kind || ''));
+    var base: any[] = (cat && Array.isArray(cat.base)) ? cat.base : [];
+    for (var j = 0; j < base.length; j++) {
+        if (base[j] && String(base[j].scope || '') === v) return v;
     }
     return 'any';
 }
@@ -67010,6 +67059,11 @@ function ceWorldOtherAnswers(qs: any[], skipId: string): string {
 
 async function ceWorldChatBlock(): Promise<string> {
     var qb = await ceWorldQuestionBlock();
+    return qb ? (CE_P_WORLD + '\n\n' + qb) : CE_P_WORLD;
+}
+// [BENCH-INPUTS] The same block over a question list the caller supplies.
+function ceWorldChatBlockFrom(qs: any[]): string {
+    var qb = ceWorldQuestionBlockFrom(qs);
     return qb ? (CE_P_WORLD + '\n\n' + qb) : CE_P_WORLD;
 }
 
@@ -67537,16 +67591,10 @@ var CE_P_PLAY_TIER =
 // the import path that already exists to change everything at once. A stale world in every
 // prompt in the engine is a far worse failure than a read.
 async function ceWorldSpan(): Promise<string> {
-    var parts: string[] = [];
     try {
         var c = await loadCharter();
-        var st = String((c && c.style) || '').trim();
-        if (st) {
-            parts.push('WORLD RULES \u2014 this applies to everything in this world:\n' + st);
-        }
-        var wb = '';
-        try { wb = await ceOpeningWorldBlock(); } catch (eWs1) { wb = ''; }
-        if (String(wb || '').trim()) parts.push(String(wb).trim());
+        var qs: any[] = [];
+        try { qs = await ceWorldQuestions(); } catch (eWs1) { qs = []; }
         // [P-WORLD-SPAN] THE VOICE TIER IS NOT IN THIS SPAN, AND 3.12.9 PUT IT HERE WRONGLY.
         // CE_P_PLAY_TIER states its own destination in its second sentence: "This goes to the
         // story's narrator and to nothing else. It NEVER REACHES THE TOOL'S OWN WRITERS."
@@ -67561,7 +67609,21 @@ async function ceWorldSpan(): Promise<string> {
         // "stamped onto EVERY generation the tool makes", which is this span exactly. Two
         // tiers, two audiences, and the prompts already say which is which -- the span just
         // has to believe them.
-    } catch (eWs) { api.v1.error('[AE:head] world span failed:', eWs); }
+        return ceWorldSpanFrom(String((c && c.style) || ''), qs);
+    } catch (eWs) { api.v1.error('[AE:head] world span failed:', eWs); return ''; }
+}
+
+// [BENCH-INPUTS] THE SPAN OVER INPUTS THE CALLER SUPPLIES: the Rules tier, then the answered
+// questions, in that order. ceWorldSpan reads both from storage and builds through here, so the
+// bench and a live story are handed the same bytes by one assembler.
+function ceWorldSpanFrom(style: string, qs: any[]): string {
+    var parts: string[] = [];
+    var st = String(style || '').trim();
+    if (st) {
+        parts.push('WORLD RULES \u2014 this applies to everything in this world:\n' + st);
+    }
+    var wb = ceOpeningWorldBlockFrom(qs);
+    if (String(wb || '').trim()) parts.push(String(wb).trim());
     return parts.join('\n\n');
 }
 
@@ -68904,6 +68966,42 @@ function _ceChatPfx(kind: string): string {
     return 'loc';
 }
 
+// [KIND-LIST-ADDR] WHERE A SCOPE'S CONVERSATION LIVES, ONE RESOLVER FOR EVERY READER. The
+// publish addressed a list kind's chat by its list ('spc:people'), and the name and seed passes
+// rebuilt the address themselves as prefix plus parent ('spc:top'), which nothing writes -- so
+// the species conversation never reached naming or seeding. BUILD-CHAT-ONE's lesson, one pass
+// over: the fix is one derivation, not three that agree.
+function _ceScopeChatAddr(kind: string, parentId: string, listId: string): string {
+    var kd = String(kind || 'location');
+    if (ceKindLists(kd).length) {
+        var ld: any = ceKindListDef(kd, String(listId || ''));
+        return _ceChatPfx(kd) + ':' + String((ld && ld.id) || 'top');
+    }
+    return _ceChatPfx(kd) + ':' + (String(parentId || '') || 'top');
+}
+// [KIND-LIST-ADDR] WHICH QUESTION SET A ROW IS ASKED. A character divides by pattern, a list kind
+// by its list's facet scope, a laddered kind by its rung's. ceSeedDefs takes the answer as one
+// argument and cannot tell the three apart, which is the point; the callers had each
+// resolved two of the three and dropped the list.
+function _ceKindAskScope(kind: string, rung: any, pattern: string, listId: string): string {
+    var kd = String(kind || '');
+    if (kd === 'character') return String(pattern || CE_PATTERN_ORDER[0]);
+    if (ceKindLists(kd).length) {
+        var ld: any = ceKindListDef(kd, String(listId || ''));
+        return String((ld && ld.scope) || 'any');
+    }
+    return String((rung && rung.scope) || 'any');
+}
+// [KIND-LIST-ADDR] Is this draft on the list being worked? Always true for a kind with no lists.
+// Both sides resolve through ceKindListDef, so a draft staged before lists existed lands on the
+// first list, as ceSpeciesList puts an unlisted record there.
+function _ceDraftOnList(d: any, kind: string, listId: string): boolean {
+    if (!ceKindLists(String(kind || '')).length) return true;
+    var want: any = ceKindListDef(String(kind), String(listId || ''));
+    var has: any = ceKindListDef(String(kind), String((d && d.listId) || ''));
+    return String((want && want.id) || '') === String((has && has.id) || '');
+}
+
 var CE_BUILD_STAGES: any[] = [
     { id: 'premise',  label: 'Premise',   built: true  },
     { id: 'charter',  label: 'Charter',   built: true  },
@@ -69005,12 +69103,13 @@ async function cePublishBuild(): Promise<void> {
             // lists are two conversations: what the peoples of this world are is not the
             // same subject as what hunts them, and one transcript answering both is paid
             // for on every seed call in each.
-            var addrAt = ceKindLists(String(kdef.kind)).length
-                ? await ceListLoadAt(String(kdef.kind))
-                : await ceScopeLoadAt(String(kdef.kind));
+            // [KIND-LIST-ADDR] Through the one resolver the passes read.
+            var addrList = ceKindLists(String(kdef.kind)).length
+                ? await ceListLoadAt(String(kdef.kind)) : '';
+            var addrAt = addrList ? '' : await ceScopeLoadAt(String(kdef.kind));
             chatScope = chatKey
                 ? ('rec:' + chatKey)
-                : (String(kdef.chatPfx) + ':' + (addrAt || 'top'));
+                : _ceScopeChatAddr(String(kdef.kind), addrAt, addrList);
         }
         // [OPEN-WRITE] The Opening stage has a conversation like every other, on its own
         // address. It is named here rather than folded into the kdef test because it is not
@@ -69214,10 +69313,10 @@ async function cePublishBuild(): Promise<void> {
                         break;
                     }
                 }
-                chatBlk = await ceRecordChatBlock(kn, kIntent, atId, String(kdef.kind), kPat);
+                chatBlk = await ceRecordChatBlock(kn, kIntent, atId, String(kdef.kind), kPat, listAt);
                 chatLbl = kn;
             } else {
-                chatBlk = await ceScopeChatBlock(atId, String(kdef.kind));
+                chatBlk = await ceScopeChatBlock(atId, String(kdef.kind), listAt);
                 var lLab = '';
                 if (listDefs.length) {
                     var lD2: any = ceKindListDef(String(kdef.kind), listAt);
@@ -70755,9 +70854,14 @@ function _ceBuildScope(st: any, openMap: any): any {
     var seedDefs: any[] = st.seedDefs || [];
     var named = 0;
     var seeded = 0;
+    // [BUILD-COMMIT-SCOPE] THE ROWS THIS SCREEN SHOWS, BY ID. Commit was called with the kind
+    // alone, and commitStagedDrafts with no id list commits every named draft of that kind in
+    // the story -- other parents, other scales, the other species list -- under a button that
+    // counted only these.
+    var commitIds: string[] = [];
     for (i = 0; i < rows.length; i++) {
         var rs = ceScopeRowState(rows[i]);
-        if (rs !== 'queued') named++;
+        if (rs !== 'queued') { named++; commitIds.push(String(rows[i].id)); }
         if (rs === 'seeded') seeded++;
     }
     var toName = rows.length - named;
@@ -71038,7 +71142,7 @@ function _ceBuildScope(st: any, openMap: any): any {
                         toName > 0 ? ceBtn('Name ' + String(toName) + ' more', 'scope:name', function() {
                             return ceBuildOp(function() {
                                 return ceNameBatch(atId, rung ? String(rung.id) : '',
-                                                   String(kdef.kind));
+                                                   String(kdef.kind), listAt);
                             }).then(function(msg: any) {
                                 try { api.v1.ui.toast(String(msg), { type: 'success', autoClose: 6000 }); } catch (_eN1) {}
                                 return cePublishBuild();
@@ -71050,7 +71154,7 @@ function _ceBuildScope(st: any, openMap: any): any {
                         toSeed > 0 ? ceBtn('Seed ' + String(toSeed), 'scope:seed', function() {
                             return ceBuildOp(function() {
                                 return ceSeedBatch(atId, rung ? String(rung.id) : '',
-                                                   String(kdef.kind));
+                                                   String(kdef.kind), listAt);
                             }).then(function(msg: any) {
                                 try { api.v1.ui.toast(String(msg), { type: 'success', autoClose: 7000 }); } catch (_eS5) {}
                                 return cePublishBuild();
@@ -71073,7 +71177,9 @@ function _ceBuildScope(st: any, openMap: any): any {
                             // [BUILD-CHROME] THE STAGE'S KIND. Committing 'location' from the faction
                             // stage created location records out of the author's factions and left
                             // the faction queue untouched.
-                            return ceBuildOp(function() { return commitStagedDrafts(kKind); })
+                            // [BUILD-COMMIT-SCOPE] An empty list would mean "all of them".
+                            if (!commitIds.length) return Promise.resolve();
+                            return ceBuildOp(function() { return commitStagedDrafts(kKind, commitIds); })
                                 .then(function(nMade: any) {
                                     try { api.v1.ui.toast(String(nMade) + ' '
                                         + (Number(nMade) === 1 ? kNoun : _cePlural(kNoun))
@@ -73690,18 +73796,21 @@ async function ceOpeningWrite(hint: string, budget?: number): Promise<string> {
 // feel obliged to fill in.
 async function ceOpeningWorldBlock(): Promise<string> {
     try {
-        var qs: any[] = await ceWorldQuestions();
-        var lines: string[] = [];
-        for (var i = 0; i < qs.length; i++) {
-            var v = String((qs[i] && qs[i].content) || '').trim();
-            if (!v) continue;
-            lines.push(String(qs[i].label || '') + ': ' + v);
-        }
-        return lines.length ? ('WHAT IS TRUE OF THIS WORLD:\n' + lines.join('\n')) : '';
+        return ceOpeningWorldBlockFrom(await ceWorldQuestions());
     } catch (eOwb) {
         api.v1.error('[AE:open] world block failed:', eOwb);
         return '';
     }
+}
+// [BENCH-INPUTS] The answered questions, over a list the caller supplies.
+function ceOpeningWorldBlockFrom(qs: any[]): string {
+    var lines: string[] = [];
+    for (var i = 0; i < (qs || []).length; i++) {
+        var v = String((qs[i] && qs[i].content) || '').trim();
+        if (!v) continue;
+        lines.push(String(qs[i].label || '') + ': ' + v);
+    }
+    return lines.length ? ('WHAT IS TRUE OF THIS WORLD:\n' + lines.join('\n')) : '';
 }
 
 // The cast and the committed world, as the opening pass sees them: NAMES AND ONE LINE EACH,
@@ -73890,7 +73999,7 @@ async function ceWorldExtract(): Promise<string> {
 
     var base = await ceBuildChatMessages('world', await ceWorldChatBlock(), chat.turns);
     var model = ceUtilityModel();   // [UTIL-PIN] the utility channel, never the story's model
-    var params: any = { model: model, max_tokens: 300, temperature: 0.7, enable_thinking: false };
+    var params: any = ceWorldExtractParams(model);
     var wrote = 0; var silent = 0; var failed = 0; var relapsed = 0;
     for (var t = 0; t < todo.length; t++) {
         var q: any = todo[t];
@@ -73946,6 +74055,12 @@ async function ceWorldExtract(): Promise<string> {
 // with the rejected turn above it as a real assistant message -- the same shape PROMPTS 4.6
 // uses for a rejected name, and for the same reason: the model sees its own answer rather
 // than being told about it in the third person.
+// [BENCH-INPUTS] The extraction's sampling, named once for the batch, the re-roll and the bench.
+function ceWorldExtractParams(model?: string): any {
+    return { model: String(model || ceUtilityModel()), max_tokens: 300, temperature: 0.7,
+             enable_thinking: false };
+}
+
 async function _ceWorldExtractOne(base: any[], params: any, q: any,
                                   others?: string): Promise<string | null> {
     var ask = _ceWorldExtractAsk(String(q.label || ''), ceWorldScope(q), String(others || ''));
@@ -73990,7 +74105,7 @@ async function ceWorldReroll(secId: string): Promise<string> {
     if (!q) return 'That question is gone.';
     var base = await ceBuildChatMessages('world', await ceWorldChatBlock(), chat.turns);
     var model = ceUtilityModel();   // [UTIL-PIN] the utility channel, never the story's model
-    var params: any = { model: model, max_tokens: 300, temperature: 0.7, enable_thinking: false };
+    var params: any = ceWorldExtractParams(model);
     try {
         // [WORLD-NO-ECHO] The re-roll needs the guard MOST: it is pressed on a field the
         // author judged wrong, and the commonest way for one to be wrong is that it repeated
@@ -74446,16 +74561,21 @@ function ceNameClash(cand: string, pool: string[]): string {
     return '';
 }
 
-// [NAME-POOL-WORLD] Every committed location name, most recent last so the append stays an
+// [NAME-POOL-WORLD] Every committed name of THIS KIND, most recent last so the append stays an
 // extension. Capped on the normalised form so two spellings of one name cost one slot.
-async function ceNamePool(): Promise<string[]> {
+// [NAME-POOL-KIND] PER KIND, as PROMPTS 4.3 argues. It read locations for every kind, so a new
+// character, faction or item name was checked against place names and never against its own
+// kind. A character's names come off the cast index, which every character is on.
+async function ceNamePool(kind?: string): Promise<string[]> {
+    var kdP = String(kind || 'location');
     var out: string[] = [];
     try {
-        var idx = await loadEntityIndex();
+        var idx: any[] = (kdP === 'character') ? await loadIndex() : await loadEntityIndex();
         var seen: any = {};
         for (var i = 0; i < idx.length; i++) {
             var m: any = idx[i];
-            if (!m || String(m.type) !== 'location') continue;
+            if (!m) continue;
+            if (kdP !== 'character' && String(m.type) !== kdP) continue;
             var nm = String(m.name || '').trim();
             if (!nm) continue;
             var k = ceNameNormalise(nm);
@@ -74652,7 +74772,8 @@ async function ceNameOne(base: any[], noun: string, intent: string, pool: string
 // failures rather than aborting: WORLDPIPE 8's rule, and it is what makes "run it again for
 // the failed ones" mean something. A transport failure halts with everything before it
 // intact, because continuing spends the rest of the batch against a door that is shut.
-async function ceNameBatch(parentId: string, rungId: string, kind?: string): Promise<string> {
+async function ceNameBatch(parentId: string, rungId: string, kind?: string,
+                           listId?: string): Promise<string> {
     var kdN = String(kind || 'location');
     var c = await loadCharter();
     var ladder: any[] = ceKindLadder(kdN, c);
@@ -74679,6 +74800,7 @@ async function ceNameBatch(parentId: string, rungId: string, kind?: string): Pro
         if (!d) continue;
         if (String(d.parentId || '') !== String(parentId || '')) continue;
         if (String((d.fields || {})[CE_DRAFT_RUNG_KEY] || '') !== String(rungId)) continue;
+        if (!_ceDraftOnList(d, kdN, String(listId || ''))) continue;   // [KIND-LIST-ADDR]
         if (String((d.fields || {}).name || '').trim()) continue;
         todo.push(d);
     }
@@ -74686,12 +74808,12 @@ async function ceNameBatch(parentId: string, rungId: string, kind?: string): Pro
         return 'Every ' + _ceKindNoun(kdN) + ' here already has a name.';
     }
 
-    var pool = await ceNamePool();
+    var pool = await ceNamePool(kdN);   // [NAME-POOL-KIND]
     // [NAME-FROM-CHAT] The conversation about this set, flattened once for the whole batch.
     var nTrans = '';
     try {
-        var nChat: any = await loadBuildChat(_ceChatPfx(kdN) + ':'
-                                             + (String(parentId || '') || 'top'));
+        var nChat: any = await loadBuildChat(_ceScopeChatAddr(kdN, String(parentId || ''),
+                                                              String(listId || '')));
         var nParts: string[] = [];
         for (var nt = 0; nt < nChat.turns.length; nt++) {
             var tu: any = nChat.turns[nt];
@@ -75257,7 +75379,7 @@ async function _ceChatRungAt(ladder: any[], atId: string): Promise<any> {
 // [SCOPE-CHAT-STABLE] IT CARRIES NO DIGEST OF WHAT EXISTS AT THIS SCOPE, against PROMPTS 15's
 // last line. Committing one row would rewrite the system block of a conversation the whole
 // session is warm on. The ladder and the question list do not move, so what is here stays.
-async function ceScopeChatBlock(atId: string, kind?: string): Promise<string> {
+async function ceScopeChatBlock(atId: string, kind?: string, listId?: string): Promise<string> {
     try {
         var kd = String(kind || 'location');
         var c = await loadCharter();
@@ -75274,7 +75396,10 @@ async function ceScopeChatBlock(atId: string, kind?: string): Promise<string> {
         var below = (nx && rung && String(nx.id) !== String(rung.id)) ? String(nx.label || '') : '';
         var cfg: any = await loadConfig();
         var sShape = ceKindShape(kd, rung, c);
-        var defs = ceSeedDefs(kd, String((rung && rung.scope) || 'any'), cfg, sShape);
+        // [KIND-LIST-ADDR] A list kind's chat lists its list's questions, as its rows ask them.
+        var sAsk = ceKindLists(kd).length ? _ceKindAskScope(kd, rung, '', String(listId || ''))
+                                          : String((rung && rung.scope) || 'any');
+        var defs = ceSeedDefs(kd, sAsk, cfg, sShape);
         // [CAST-PATTERN] THE SCOPE CHAT IS ABOUT THE SET AND THE SET HAS NO ONE PATTERN.
         // A cast conversation covers characters that will end up on different patterns, so
         // listing any one pattern's pair here would be a claim about all of them. The gated
@@ -75315,7 +75440,7 @@ async function ceScopeChatBlock(atId: string, kind?: string): Promise<string> {
 // while the seed pass that reads that chat asked for Defense's. The author would talk
 // through the wrong pair and the extraction would find nothing for the right one.
 async function ceRecordChatBlock(recName: string, intent: string, atId: string,
-                                 kind?: string, pattern?: string): Promise<string> {
+                                 kind?: string, pattern?: string, listId?: string): Promise<string> {
     try {
         var kd = String(kind || 'location');
         var c = await loadCharter();
@@ -75333,9 +75458,7 @@ async function ceRecordChatBlock(recName: string, intent: string, atId: string,
         // [CAST-PATTERN] The row's pattern where the kind divides that way, the rung's scope
         // where it divides by scale, 'any' where it does not divide at all -- one argument,
         // exactly as ceSeedDefs has always taken it.
-        var rAsk = (kd === 'character')
-            ? String(pattern || CE_PATTERN_ORDER[0])
-            : String((rung && rung.scope) || 'any');
+        var rAsk = _ceKindAskScope(kd, rung, String(pattern || ''), String(listId || ''));
         var rShape = ceKindShape(kd, rung, c);
         var rClassic = (rShape === 'classic' && kd !== 'character');
         var defs = ceSeedDefs(kd, rAsk, cfg, rShape);
@@ -75720,7 +75843,7 @@ function _ceSeedPatchOne(got: any, fid: string): any {
 // them, and max_tokens is priced off their count. Narrowing at the write end would ask the
 // model ten questions, pay for ten answers and throw nine away.
 async function _ceSeedContext(parentId: string, rungId: string, kind?: string,
-                              pattern?: string, only?: string): Promise<any> {
+                              pattern?: string, only?: string, listId?: string): Promise<any> {
     var kd = String(kind || 'location');
     var c = await loadCharter();
     var ladder: any[] = ceKindLadder(kd, c);
@@ -75751,9 +75874,7 @@ async function _ceSeedContext(parentId: string, rungId: string, kind?: string,
     // is not a trick: `rungScope` is already "whatever divides this kind's question set",
     // and ceSeedDefs has never been able to tell a scale from a list from a pattern. A
     // ladderless kind passes 'any' here and always has, so nothing else moves.
-    var askScope = (kd === 'character')
-        ? String(pattern || CE_PATTERN_ORDER[0])
-        : String((rung && rung.scope) || 'any');
+    var askScope = _ceKindAskScope(kd, rung, String(pattern || ''), String(listId || ''));
     var defs = ceSeedDefs(kd, askScope, cfg, kShape);
     // [SEED-ONE-FIELD] AND IT IS RESOLVED AGAINST THE SET, NEVER SYNTHESISED FROM THE ID.
     // The question the author pressed may not be asked at this pattern any more -- the two
@@ -75779,13 +75900,13 @@ async function _ceSeedContext(parentId: string, rungId: string, kind?: string,
 
     // [SEED-ROUTE] The conversation, if there is one, and the flat text used to decide which
     // rows it covers.
-    var scope = _ceChatPfx(kd) + ':' + (String(parentId || '') || 'top');
+    var scope = _ceScopeChatAddr(kd, String(parentId || ''), String(listId || ''));   // [KIND-LIST-ADDR]
     var extBase: any = null;
     var transcript = '';
     try {
         var chat = await loadBuildChat(scope);
         if (chat && chat.turns && chat.turns.length) {
-            var blk = await ceScopeChatBlock(String(parentId || ''), kd);
+            var blk = await ceScopeChatBlock(String(parentId || ''), kd, String(listId || ''));
             extBase = await ceBuildChatMessages(scope, blk, chat.turns);
             var parts: string[] = [];
             for (var t = 0; t < chat.turns.length; t++) {
@@ -75832,13 +75953,14 @@ async function _ceSeedContext(parentId: string, rungId: string, kind?: string,
 // dock sends on, so the extraction is a prefix extension of the conversation rather than a
 // second assembly of it.
 async function _ceSeedRecordBase(recId: string, name: string, intent: string,
-                                 atId: string, kind?: string, pattern?: string): Promise<any> {
+                                 atId: string, kind?: string, pattern?: string,
+                                 listId?: string): Promise<any> {
     try {
         var scope = 'rec:' + String(recId);
         var chat = await loadBuildChat(scope);
         if (!chat || !chat.turns || !chat.turns.length) return null;
         var blk = await ceRecordChatBlock(name, intent, String(atId || ''), kind,
-                                          String(pattern || ''));
+                                          String(pattern || ''), String(listId || ''));
         return await ceBuildChatMessages(scope, blk, chat.turns);
     } catch (eRb) { api.v1.error('[AE:seed] record base failed:', eRb); return null; }
 }
@@ -75852,8 +75974,9 @@ async function _ceSeedRecordBase(recId: string, name: string, intent: string,
 // path, so the worst a wrong route does is pay one extra call; and extraction never invents,
 // so a row it cannot fill is filled from the charter rather than from a conversation that
 // said nothing about it.
-async function ceSeedBatch(parentId: string, rungId: string, kind?: string): Promise<string> {
-    var ctx: any = await _ceSeedContext(parentId, rungId, kind);
+async function ceSeedBatch(parentId: string, rungId: string, kind?: string,
+                           listId?: string): Promise<string> {
+    var ctx: any = await _ceSeedContext(parentId, rungId, kind, undefined, undefined, listId);
     // [SHAPE-ASKS] Classic asks nothing BY DESIGN and still wants its one-line summary, so
     // an empty set is only an error when the shape meant to have one.
     if (!ctx.defs.length && ctx.shape !== 'classic') {
@@ -75867,6 +75990,7 @@ async function ceSeedBatch(parentId: string, rungId: string, kind?: string): Pro
         if (!d) continue;
         if (String(d.parentId || '') !== String(parentId || '')) continue;
         if (String((d.fields || {})[CE_DRAFT_RUNG_KEY] || '') !== String(rungId)) continue;
+        if (!_ceDraftOnList(d, String(ctx.kind), String(listId || ''))) continue;   // [KIND-LIST-ADDR]
         if (ceScopeRowState(d) !== 'named') continue;
         todo.push(d);
     }
@@ -75893,7 +76017,7 @@ async function ceSeedBatch(parentId: string, rungId: string, kind?: string): Pro
         if (String(ctx.kind) === 'character') {
             var rPat = ceCastRowPattern(row);
             if (!ctxByPat[rPat]) {
-                ctxByPat[rPat] = await _ceSeedContext(parentId, rungId, kind, rPat);
+                ctxByPat[rPat] = await _ceSeedContext(parentId, rungId, kind, rPat, undefined, listId);
             }
             rctx = ctxByPat[rPat];
         }
@@ -75904,7 +76028,8 @@ async function ceSeedBatch(parentId: string, rungId: string, kind?: string): Pro
             // prefix -- the scope transcript is paid on every row and is noise on all but
             // the one it is about.
             var recBase = await _ceSeedRecordBase(String(row.id), nm, intent, parentId,
-                                                  String(rctx.kind), String(rctx.defPattern || ''));
+                                                  String(rctx.kind), String(rctx.defPattern || ''),
+                                                  String(listId || ''));
             if (recBase) {
                 got = await _ceSeedOne(recBase, rctx.params, rctx.defs,
                     ceSeedExtractAsk(rctx.noun, nm, intent, rctx.defs, String(rctx.kind || ''), !!rctx.classic), 'extract', String(rctx.kind || ''), !!rctx.classic);
@@ -75994,7 +76119,8 @@ async function ceSeedReroll(draftId: string, kind?: string, only?: string): Prom
         var onlyId = String(only || '');
         var ctx: any = await _ceSeedContext(String(row.parentId || ''),
                                             String((row.fields || {})[CE_DRAFT_RUNG_KEY] || ''),
-                                            kdR, ceCastRowPattern(row), onlyId);
+                                            kdR, ceCastRowPattern(row), onlyId,
+                                            String((row as any).listId || ''));
         // [SEED-ONE-FIELD] An empty set means two different things and they get two
         // different sentences: the shape asks nothing at all, or the one question asked for
         // is not in this pattern's set any more. The second is reachable by pressing a
@@ -76009,7 +76135,8 @@ async function ceSeedReroll(draftId: string, kind?: string, only?: string): Prom
         var got: any = null;
         var rBase = await _ceSeedRecordBase(String(row.id), nm, intent,
                                             String(row.parentId || ''), kdR,
-                                            String(ctx.defPattern || ''));
+                                            String(ctx.defPattern || ''),
+                                            String((row as any).listId || ''));
         if (rBase) {
             got = await _ceSeedOne(rBase, ctx.params, ctx.defs,
                 ceSeedExtractAsk(ctx.noun, nm, intent, ctx.defs, String(ctx.kind || ''), !!ctx.classic), 'extract', String(ctx.kind || ''), !!ctx.classic);
@@ -76094,7 +76221,13 @@ function _ceBuildTurnId(): string {
 // The style tier rides the head because a chat that does not know the world's naming
 // conventions will cheerfully propose names that violate them.
 async function ceBuildChatMessages(scope: string, block: string, turns: BuildChatTurn[]): Promise<any[]> {
-    var sys = await ceSysHead({ family: 'chat' });
+    return ceBuildChatMessagesFrom(await ceSysHead({ family: 'chat' }), block, turns);
+}
+// [BENCH-INPUTS] The assembly over a head the caller supplies. ceSysHead reads the story's
+// world; the bench hands in ceBuildHead over a fixture's. The turns are laid out by this one
+// loop either way.
+function ceBuildChatMessagesFrom(head: string, block: string, turns: BuildChatTurn[]): any[] {
+    var sys = String(head || '');
     if (block) sys = sys + '\n\n' + block;
     var msgs: any[] = [{ role: 'system', content: sys }];
     for (var i = 0; i < turns.length; i++) {
@@ -76186,4 +76319,384 @@ function ceBuildChatPress(scope: string, block: string): Promise<BuildChat> {
 }
 function ceBuildChatRegen(scope: string, block: string): Promise<BuildChat> {
     return _ceBuildChatTurn(scope, block, { regen: true });
+}
+
+// ============================================================================
+// SECTION BENCH — PROMPT BENCH  [BENCH]
+//
+// A PROMPT IS TESTED BY WHAT IT DOES, NEVER BY ITS TEXT. Each test runs one live prompt through
+// the real model, at the sampling it ships with, on a fixed made-up input, CE_BENCH_RUNS times,
+// and checks every answer in code against one sentence: the test's contract. The count that
+// comes back ("3 failing runs of 20") is what a change to that prompt is judged by. One run is
+// one sample, and a prompt can give the same test 4 and then 17 failing runs of 20 unchanged.
+//
+// [BENCH-INPUTS] A TEST CALLS THE LIVE BUILDERS, FED ITS FIXTURE. Nothing here restates a
+// prompt: the evaluator tests build through ceEvalMessages and read through ceEvalReadOutcome,
+// the world tests through ceBuildChatMessagesFrom and _ceWorldExtractOne. A bench holding its
+// own copy of a prompt would measure the copy.
+//
+// [BENCH-FIXTURE] A FIXTURE IS WRITTEN IN NOUNS NO STORY USES and never lifted from an input
+// that failed: a fixture that mirrors one failure tests that failure in miniature and writes
+// its shape into the suite. Each pair of fixtures differs by ONE fact, so a verdict is always
+// shown beside the case that looks the same and gets the other answer.
+//
+// [BENCH-TRANSPORT] EACH TEST USES ITS PROMPT'S OWN TRANSPORT. The world passes go through
+// aeDiagGenerateWithStory, which puts the open story's built context in front of their
+// messages, so that suite is run in an empty story. The evaluator builds its own story block
+// and runs the same anywhere.
+//
+// [BENCH-INFRA] A TRANSPORT FAILURE IS NOT A FAILING RUN. It stops the test, is reported on a
+// line of its own, and the runs before it still count. A budget wall is not something the
+// prompt did.
+//
+// Results live in tempStorage [STORAGE_BENCH]: they are this session's diagnostics, they leave
+// through Export, and they never touch the story file.
+// ============================================================================
+
+var CE_BENCH_RUNS = 20;
+
+// [BENCH-FIXTURE] The evaluator's three stories: a beekeeper, a burning barn, and a fair. The
+// seeded Reputation measure counts a deed only when someone other than the protagonist saw it.
+var CE_BENCH_EVAL_WHO = 'Tamsin';
+var CE_BENCH_FIRE_SEEN =
+    'The tithe barn caught fire on the last night of the harvest fair. Tamsin dropped her honey '
+  + 'pots, ran in through the smoke, and carried out the miller\u2019s two children while the '
+  + 'whole fair watched from the yard. She came out coughing, her sleeves burned through. For a '
+  + 'moment nobody spoke. Then someone near the cider stall started clapping.';
+var CE_BENCH_FIRE_ALONE =
+    'The tithe barn caught fire long after the fair had gone home, with nobody inside it. Tamsin '
+  + 'was alone on the hill with her hives. She ran down, beat the flames out with a wet sack '
+  + 'before they reached the hay, burned both hands doing it, and walked home before anyone '
+  + 'woke. In the morning the miller found the scorched wall and blamed the lightning.';
+var CE_BENCH_FIRE_AFTER =
+    CE_BENCH_FIRE_SEEN
+  + '\n\nThe next morning the fair was still talking about it. Two people stopped Tamsin at the '
+  + 'well to thank her again. She nodded, filled her buckets, and went back up the hill to the '
+  + 'hives.';
+var CE_BENCH_FIRE_COUNTED = 'carried the miller\u2019s two children out of the burning barn';
+
+function _ceBenchEvalRun(story: string, seen: string): Promise<any> {
+    var def: any = _ceEvalSeedCopy();
+    return aeDiagGenerate('bench:eval', ceEvalMessages(def, CE_BENCH_EVAL_WHO, seen, story),
+                          ceEvalParams()).then(function(res: any) {
+        var text = String((res && res.choices && res.choices[0] && res.choices[0].text) || '');
+        var read: any = ceEvalReadOutcome(text, def);
+        var outcome = !read.parsed ? '(no JSON)'
+                    : (read.picked ? String(read.picked.id) : (String(read.outcome || '') || '(empty)'));
+        return { text: text, outcome: outcome };
+    });
+}
+
+// [BENCH-FIXTURE] The world conversation: three sisters, their bees, and an oath to an abbey
+// that burned. It settles the oath and never mentions who keeps order.
+var CE_BENCH_WORLD_TURNS: any[] = [
+    { id: 'bw1', role: 'user', text: 'A quiet story about three sisters who keep bees on a hill '
+        + 'above a market town, and their feud with the town\u2019s candle-makers.' },
+    { id: 'bw2', role: 'assistant', text: 'Two ways the feud could run. Either it is about wax, '
+        + 'because the candle-makers need it and the sisters will not sell it, or it is older, '
+        + 'and about land. Which is it?' },
+    { id: 'bw3', role: 'user', text: 'Wax. The sisters sell honey but never wax, because their '
+        + 'mother swore an oath to the old abbey that every scrap of wax would go to its candles.' },
+    { id: 'bw4', role: 'assistant', text: 'So the oath is the heart of it. Is the abbey still '
+        + 'standing, or is the oath to something that is gone?' },
+    { id: 'bw5', role: 'user', text: 'The abbey burned down forty years ago. They keep the oath '
+        + 'anyway and store the wax in the cellar, where it has been piling up ever since.' }
+];
+var CE_BENCH_WORLD_QS: any[] = [
+    { id: 'bq_oath', label: 'The oath', enabled: true, content: '', target: 'memory',
+      helper: 'What the family has sworn, to whom, and what keeping it costs them.',
+      instructions: 'What the family has sworn, to whom, and what keeping it costs them.' },
+    { id: 'bq_law', label: 'The law', enabled: true, content: '', target: 'memory',
+      helper: 'Who keeps order here, and what happens to someone who breaks it.',
+      instructions: 'Who keeps order here, and what happens to someone who breaks it.' }
+];
+
+// The live extraction, end to end: the chat's own prefix built over the fixture, then the
+// pass with its one retry. `value` is what the live batch writes: '' for none, null when the
+// reply came back as conversation twice.
+function _ceBenchWorldRun(qid: string): Promise<any> {
+    var qs: any[] = JSON.parse(JSON.stringify(CE_BENCH_WORLD_QS));
+    var q: any = null;
+    for (var i = 0; i < qs.length; i++) { if (String(qs[i].id) === qid) { q = qs[i]; break; } }
+    if (!q) return Promise.reject(new Error('no fixture question ' + qid));
+    var head = ceBuildHead({ family: 'chat', world: ceWorldSpanFrom('', qs) });
+    var base = ceBuildChatMessagesFrom(head, ceWorldChatBlockFrom(qs), CE_BENCH_WORLD_TURNS);
+    return _ceWorldExtractOne(base, ceWorldExtractParams(), q,
+                              ceWorldOtherAnswers(qs, String(q.id))).then(function(out: any) {
+        var text = (out === null) ? '(came back as conversation, twice)'
+                 : (String(out || '') ? String(out) : 'none');
+        return { text: text, value: out };
+    });
+}
+
+function _ceBenchVerdict(ok: boolean, why: string): any { return { ok: !!ok, why: String(why || '') }; }
+
+// THE SUITES. A test is an id, a label, its contract in one sentence, a run that calls the live
+// prompt once, and a check that reads the run against the contract and nothing else.
+var CE_BENCH_SUITES: any[] = [
+    { id: 'eval', label: 'Evaluator',
+      note: 'The seeded Reputation measure, which counts a deed only when someone else saw it. '
+          + 'Runs the same in any story: it brings its own.',
+      tests: [
+        { id: 'seen', label: 'A brave act, seen',
+          contract: 'A brave act that other people saw moves Reputation: the outcome is fame.',
+          run: function() { return _ceBenchEvalRun(CE_BENCH_FIRE_SEEN, ''); },
+          check: function(r: any) { return _ceBenchVerdict(r.outcome === 'fame', 'outcome: ' + r.outcome); } },
+        { id: 'alone', label: 'A brave act, unseen',
+          contract: 'A brave act nobody saw changes nothing: the outcome is unchanged.',
+          run: function() { return _ceBenchEvalRun(CE_BENCH_FIRE_ALONE, ''); },
+          check: function(r: any) { return _ceBenchVerdict(r.outcome === CE_EVAL_NOOP, 'outcome: ' + r.outcome); } },
+        { id: 'counted', label: 'The same act, told again',
+          contract: 'An act already counted is not counted again when people talk about it later: '
+                  + 'the outcome is unchanged.',
+          run: function() { return _ceBenchEvalRun(CE_BENCH_FIRE_AFTER, CE_BENCH_FIRE_COUNTED); },
+          check: function(r: any) { return _ceBenchVerdict(r.outcome === CE_EVAL_NOOP, 'outcome: ' + r.outcome); } }
+      ] },
+    { id: 'world', label: 'World answers',
+      note: 'Writing one world question from the conversation. Run this suite in an empty '
+          + 'story: the live pass carries the open story\u2019s context, and so does this.',
+      tests: [
+        { id: 'settled', label: 'A settled question',
+          contract: 'A question the conversation settled is answered from what the author said: '
+                  + 'the answer names the abbey and the wax.',
+          run: function() { return _ceBenchWorldRun('bq_oath'); },
+          check: function(r: any) {
+              var v = (r.value === null) ? '' : String(r.value || '').toLowerCase();
+              if (r.value === null) return _ceBenchVerdict(false, 'came back as conversation');
+              if (!v) return _ceBenchVerdict(false, 'answered none');
+              var ok = v.indexOf('abbey') >= 0 && v.indexOf('wax') >= 0;
+              return _ceBenchVerdict(ok, ok ? 'names both' : 'missing the abbey or the wax');
+          } },
+        { id: 'untouched', label: 'An untouched question',
+          contract: 'A question the conversation never touched comes back as none.',
+          run: function() { return _ceBenchWorldRun('bq_law'); },
+          check: function(r: any) {
+              if (r.value === null) return _ceBenchVerdict(false, 'came back as conversation');
+              return _ceBenchVerdict(String(r.value || '') === '',
+                                     String(r.value || '') ? 'wrote an answer' : 'none');
+          } }
+      ] }
+];
+
+// ── Running ─────────────────────────────────────────────────────────────────
+// Module state, published into ceSettingsStore the way the cache probe is: a store patch per
+// run, never cePublishSettings, which reads the config and two indexes.
+var _ceBench: any = { loaded: false, busy: false, stop: false, running: '', note: '', results: {} };
+
+function _ceBenchKey(sid: string, tid: string): string { return String(sid) + ':' + String(tid); }
+
+function _ceBenchFind(sid: string, tid: string): any {
+    for (var i = 0; i < CE_BENCH_SUITES.length; i++) {
+        var su: any = CE_BENCH_SUITES[i];
+        if (String(su.id) !== String(sid)) continue;
+        for (var j = 0; j < su.tests.length; j++) {
+            if (String(su.tests[j].id) === String(tid)) return { suite: su, test: su.tests[j] };
+        }
+    }
+    return null;
+}
+
+// Every count says what it counts and out of how many.
+function _ceBenchCount(r: any): string {
+    if (!r || !Number(r.total)) return 'not run yet';
+    var f = Number(r.failed) || 0;
+    return String(f) + ' failing run' + (f === 1 ? '' : 's') + ' of ' + String(r.total);
+}
+
+function _ceBenchSnapshot(): any {
+    return { busy: !!_ceBench.busy, running: String(_ceBench.running || ''),
+             note: String(_ceBench.note || ''),
+             results: JSON.parse(JSON.stringify(_ceBench.results || {})) };
+}
+
+function _ceBenchPublish(): void {
+    try {
+        if (!ceSettingsStore) return;
+        ceSettingsPatch(function() { return { bench: _ceBenchSnapshot() }; });
+    } catch (eBp) {}
+}
+
+async function ceBenchLoad(): Promise<void> {
+    if (_ceBench.loaded) return;
+    _ceBench.loaded = true;
+    try {
+        var raw: any = await api.v1.tempStorage.getOrDefault(STORAGE_BENCH, null);
+        if (raw && typeof raw === 'object' && raw.results && typeof raw.results === 'object') {
+            _ceBench.results = raw.results;
+        }
+    } catch (eBl) { api.v1.error('[AE:bench] load failed:', eBl); }
+}
+
+async function _ceBenchSave(): Promise<void> {
+    try { await api.v1.tempStorage.set(STORAGE_BENCH, { results: _ceBench.results }); }
+    catch (eBs) { api.v1.error('[AE:bench] save failed:', eBs); }
+}
+
+// One test, CE_BENCH_RUNS times, one call after another. Every run's whole reply is kept, so a
+// failing run's reasoning can be read rather than inferred from its outcome.
+async function _ceBenchRunOne(sid: string, tid: string): Promise<string> {
+    var f: any = _ceBenchFind(sid, tid);
+    if (!f) return 'That test is gone.';
+    var key = _ceBenchKey(sid, tid);
+    var res: any = { suite: String(sid), test: String(tid), label: String(f.test.label),
+                     contract: String(f.test.contract), runs: [], failed: 0, total: 0,
+                     infra: '', at: Date.now() };
+    _ceBench.results[key] = res;
+    for (var n = 0; n < CE_BENCH_RUNS; n++) {
+        if (_ceBench.stop) { res.infra = 'Stopped after ' + String(res.runs.length) + ' runs.'; break; }
+        _ceBench.running = key;
+        _ceBench.note = String(f.test.label) + ': run ' + String(n + 1) + ' of ' + String(CE_BENCH_RUNS);
+        _ceBenchPublish();
+        try {
+            var out: any = await f.test.run();
+            var v: any = f.test.check(out) || _ceBenchVerdict(false, 'no verdict');
+            res.runs.push({ ok: !!v.ok, why: String(v.why || ''), text: String((out && out.text) || '') });
+            if (!v.ok) res.failed++;
+        } catch (eBr) {
+            var msg = String((eBr && (eBr as any).message) || eBr || 'failed');
+            if (_ceGenFailKind(eBr) === 'transport') {          // [BENCH-INFRA]
+                res.infra = 'The call did not reach the model after ' + String(res.runs.length)
+                          + ' runs: ' + msg;
+                break;
+            }
+            res.runs.push({ ok: false, why: 'threw: ' + msg, text: '' });
+            res.failed++;
+        }
+        res.total = res.runs.length;
+    }
+    res.total = res.runs.length;
+    res.at = Date.now();
+    await _ceBenchSave();
+    return _ceBenchCount(res);
+}
+
+async function ceBenchRunTest(sid: string, tid: string): Promise<void> {
+    if (_ceBench.busy) { _ceBench.note = 'One test at a time.'; _ceBenchPublish(); return; }
+    _ceBench.busy = true;
+    _ceBench.stop = false;
+    try {
+        await ceBenchLoad();
+        var f: any = _ceBenchFind(sid, tid);
+        var line = await _ceBenchRunOne(sid, tid);
+        _ceBench.note = (f ? String(f.test.label) + ': ' : '') + line + '.';
+    } catch (eBt) {
+        _ceBench.note = 'The test did not run: ' + String((eBt && (eBt as any).message) || eBt);
+    } finally {
+        _ceBench.busy = false;
+        _ceBench.running = '';
+        _ceBenchPublish();
+    }
+}
+
+async function ceBenchRunSuite(sid: string): Promise<void> {
+    if (_ceBench.busy) { _ceBench.note = 'One test at a time.'; _ceBenchPublish(); return; }
+    var su: any = null;
+    for (var i = 0; i < CE_BENCH_SUITES.length; i++) {
+        if (String(CE_BENCH_SUITES[i].id) === String(sid)) su = CE_BENCH_SUITES[i];
+    }
+    if (!su) return;
+    _ceBench.busy = true;
+    _ceBench.stop = false;
+    try {
+        await ceBenchLoad();
+        var lines: string[] = [];
+        for (var j = 0; j < su.tests.length; j++) {
+            if (_ceBench.stop) break;
+            var key = _ceBenchKey(sid, String(su.tests[j].id));
+            lines.push(String(su.tests[j].label) + ': ' + await _ceBenchRunOne(sid, String(su.tests[j].id)));
+            var r: any = _ceBench.results[key];
+            if (r && r.infra && !_ceBench.stop) break;           // [BENCH-INFRA] the door is shut
+        }
+        _ceBench.note = lines.join(' \u00b7 ');
+    } catch (eBu) {
+        _ceBench.note = 'The suite did not run: ' + String((eBu && (eBu as any).message) || eBu);
+    } finally {
+        _ceBench.busy = false;
+        _ceBench.running = '';
+        _ceBenchPublish();
+    }
+}
+
+function ceBenchStop(): Promise<void> {
+    if (!_ceBench.busy) return Promise.resolve();
+    _ceBench.stop = true;
+    _ceBench.note = 'Stopping after this run\u2026';
+    _ceBenchPublish();
+    return Promise.resolve();
+}
+
+// The results as a file: every run's whole reply, every contract, and the counts.
+function ceBenchExport(): Promise<void> {
+    var body = JSON.stringify({ ce: 'bench', version: 1, exportedAt: Date.now(),
+                                runsPerTest: CE_BENCH_RUNS, results: _ceBench.results }, null, 2);
+    return api.v1.file.save('ce-bench-' + String(Date.now()) + '.json', body).then(function() {
+        try { api.v1.ui.toast('Bench results exported.', { type: 'success', autoClose: 2400 }); } catch (_eBx) {}
+    }).catch(function(eBe: any) {
+        try { api.v1.ui.toast('Export failed: ' + String((eBe && eBe.message) || eBe), { type: 'error' }); } catch (_eBy) {}
+    });
+}
+
+// ── The tab ─────────────────────────────────────────────────────────────────
+function _ceSettingsBenchTab(st: any, openMap: any): any {
+    var b: any = (st && st.bench) || { busy: false, note: '', results: {} };
+    var groups: any[] = [];
+    groups.push(ceGroup('Prompt bench', ceStack(CE_T.s3, [
+        ceSub('t3', 'Each test runs one of the engine\u2019s prompts ' + String(CE_BENCH_RUNS)
+            + ' times on the same made-up input, and checks every answer against the sentence '
+            + 'under its name. The count is what a change to that prompt is judged by. One run is '
+            + 'one sample.'),
+        ceSub('t3', 'Every run is a real generation from this script\u2019s allowance: a test is '
+            + String(CE_BENCH_RUNS) + ' short calls.'),
+        String(b.note || '') ? ceSub('t2', String(b.note)) : null,
+        b.busy ? ceBtn('Stop after this run', 'bench:stop', ceBenchStop) : null,
+        ceBtn('Export results', 'bench:export', ceBenchExport)
+    ])));
+    for (var i = 0; i < CE_BENCH_SUITES.length; i++) {
+        groups.push(_ceBenchSuiteGroup(CE_BENCH_SUITES[i], b, openMap));
+    }
+    return ceStack(CE_T.s5, groups);
+}
+
+// Its own function, so the Run-all closure captures this suite and not the loop's last.
+function _ceBenchSuiteGroup(su: any, b: any, openMap: any): any {
+    var rows: any[] = [];
+    rows.push(ceSub('t3', String(su.note || '')));
+    rows.push(ceBtn('Run all ' + String(su.tests.length), 'bench:suite:' + String(su.id),
+        function() { return ceBenchRunSuite(String(su.id)); }, undefined, 'Running\u2026'));
+    for (var i = 0; i < su.tests.length; i++) {
+        rows.push(_ceBenchTestRow(su, su.tests[i], b, openMap, i));
+    }
+    return ceGroup(String(su.label), ceStack(CE_T.s3, rows));
+}
+
+// [LIST-KEYED] The failing-run wells come and go with each run, so every one carries a key.
+function _ceBenchTestRow(su: any, t: any, b: any, openMap: any, idx: number): any {
+    var key = _ceBenchKey(String(su.id), String(t.id));
+    var r: any = (b && b.results) ? b.results[key] : null;
+    var line = _ceBenchCount(r);
+    var fails: any[] = [];
+    var runs: any[] = (r && r.runs) ? r.runs : [];
+    for (var j = 0; j < runs.length; j++) {
+        if (runs[j] && !runs[j].ok) {
+            fails.push(ceWell({ key: 'bf:' + key + ':' + String(j),
+                text: 'Run ' + String(j + 1) + ' \u00b7 ' + String(runs[j].why || '') + '\n'
+                    + String(runs[j].text || '') }));
+        }
+    }
+    var fid = 'bench:fails:' + key;
+    var open = !!(openMap && openMap[fid]);
+    return ceStack({ gap: CE_T.s1, key: 'bt:' + key }, [
+        ceRow(String(t.label),
+            ceStack('2px', [
+                ceSub('t2', line + ((r && r.infra) ? (' \u00b7 ' + String(r.infra)) : '')),
+                ceSub('t3', String(t.contract || ''))
+            ]),
+            ceBtn('Run', 'bench:test:' + key,
+                function() { return ceBenchRunTest(String(su.id), String(t.id)); },
+                undefined, 'Running\u2026'),
+            idx),
+        fails.length ? ceExpandRow({ id: fid, key: 'bx:' + key, label: 'Failing runs',
+            meta: String(fails.length), open: open,
+            children: open ? ceStack(CE_T.s2, fails) : null }) : null
+    ]);
 }
