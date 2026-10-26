@@ -4,9 +4,9 @@ id: ce000002-0000-0000-0000-000000000001
 name: Character Engine
 createdAt: 1776400000000
 updatedAt: 1793000000000
-version: 3.14.10
+version: 3.14.11
 author: AmbiProp
-description: Character Engine v3.14.10
+description: Character Engine v3.14.11
 memoryLimit: 128
 ---*/
 
@@ -20310,12 +20310,16 @@ function ceEvalPrompt(def: any, subjectName: string, lastEvidence: string): stri
     // it constrains is read after the choice is made. So the counted act comes first, the
     // evidence must be the deed rather than a reaction, and "same" commits the comparison
     // before the outcome. Code makes "same": "yes" a no-op in ceEvalReadOutcome.
+    // Bench, 3.14.10: 2 of 20 still failed, both quoting a STEP of the counted deed ("ran in
+    // through the smoke") and judging it a different act. So a step is named as part of it.
     var seen = String(lastEvidence || '').trim();
     if (seen) {
         lines.push('');
         lines.push('ALREADY COUNTED: "' + seen + '". That act has been counted once. The story '
                  + 'above may still contain it, retell it, or show people reacting to it \u2014 '
-                 + 'praise, thanks, gossip, applause. None of that is a new act.');
+                 + 'praise, thanks, gossip, applause. None of that is a new act, and neither is '
+                 + 'any step of that same deed: what led into it, the act itself, and what '
+                 + 'happened straight after.');
     }
     lines.push('');
     lines.push('Return ONLY valid JSON with these exact keys, in this order:');
@@ -20326,9 +20330,9 @@ function ceEvalPrompt(def: any, subjectName: string, lastEvidence: string): stri
              + (seen ? ' Name a different act than the one already counted if there is one.' : '')
              + ' Leave empty if nothing in the story bears on it.');
     if (seen) {
-        lines.push('  "same": "yes" if your evidence is the act already counted \u2014 the same '
-                 + 'deed, however it is worded or wherever it is retold \u2014 or "no" if it is '
-                 + 'a different act.');
+        lines.push('  "same": "yes" if your evidence is the act already counted or any step of '
+                 + 'it \u2014 the same deed, however it is worded or wherever it is retold \u2014 or '
+                 + '"no" if it is a different act.');
     }
     lines.push('  "outcome": Exactly one of:');
     lines.push('      "' + CE_EVAL_NOOP + '" \u2014 ' + CE_EVAL_NOOP_TEXT);
@@ -74127,7 +74131,7 @@ async function ceWorldExtract(): Promise<string> {
     // went wrong and a different thing to do about it: the conversation DID cover it and the
     // reply came back as chat. Re-roll that one field.
     if (relapsed) {
-        msg += ' ' + String(relapsed) + ' came back as conversation rather than an answer '
+        msg += ' ' + String(relapsed) + ' came back unreadable, as conversation or out of form, '
              + '\u2014 re-roll ' + (relapsed === 1 ? 'it' : 'them') + ' below.';
     }
     if (failed) msg += ' ' + String(failed) + ' failed.';
@@ -74143,8 +74147,10 @@ async function ceWorldExtract(): Promise<string> {
 // than being told about it in the third person.
 // [BENCH-INPUTS] The extraction's sampling, named once for the batch, the re-roll and the bench.
 function ceWorldExtractParams(model?: string): any {
-    return { model: String(model || ceUtilityModel()), max_tokens: 450, temperature: 0.7,
-             enable_thinking: false };   // [EXTRACT-SAID] the quotes ride ahead of the answer
+    // [EXTRACT-SAID] The quotes ride ahead of the answer. 450 met the script allowance's wall
+    // mid-suite on the 3.14.10 bench (the request size is what is checked, not what is used).
+    return { model: String(model || ceUtilityModel()), max_tokens: 350, temperature: 0.7,
+             enable_thinking: false };
 }
 
 // [EXTRACT-SAID] What a reply means: '' for none, the answer to write, or null for a reply that
@@ -74165,14 +74171,20 @@ function _ceWorldExtractJudge(out: string, base: any[]): string | null {
     return a;
 }
 
+// The last call's raw replies, first try then repair. Read by the bench so a failing run shows
+// what the model wrote, not what the reader made of it. Nothing live reads it.
+var _ceWorldExtractRaw: string[] = [];
+
 async function _ceWorldExtractOne(base: any[], params: any, q: any,
                                   others?: string): Promise<string | null> {
+    _ceWorldExtractRaw = [];
     var ask = _ceWorldExtractAsk(String(q.label || ''), ceWorldScope(q), String(others || ''));
     var msgs = base.slice(0);
     msgs.push({ role: 'user', content: ask });
     var res: any = await aeDiagGenerateWithStory('world:extract', msgs, params,
                                                  undefined, undefined, 'background');
     var out = ceGenText(res);
+    _ceWorldExtractRaw.push(out);
     var v = _ceWorldExtractJudge(out, base);
     if (v !== null) return v;
 
@@ -74185,7 +74197,9 @@ async function _ceWorldExtractOne(base: any[], params: any, q: any,
       + 'none). No question, and no address to anyone.' });
     var res2: any = await aeDiagGenerateWithStory('world:extract:retry', msgs, params,
                                                   undefined, undefined, 'background');
-    return _ceWorldExtractJudge(ceGenText(res2), base);
+    var out2 = ceGenText(res2);
+    _ceWorldExtractRaw.push(out2);
+    return _ceWorldExtractJudge(out2, base);
 }
 
 // [EXTRACT-REROLL] ONE FIELD, ON DEMAND. The author's answer to a bad extraction, and the
@@ -76532,9 +76546,9 @@ function _ceBenchWorldRun(qid: string): Promise<any> {
     var base = ceBuildChatMessagesFrom(head, ceWorldChatBlockFrom(qs), CE_BENCH_WORLD_TURNS);
     return _ceWorldExtractOne(base, ceWorldExtractParams(), q,
                               ceWorldOtherAnswers(qs, String(q.id))).then(function(out: any) {
-        var text = (out === null) ? '(came back as conversation, twice)'
-                 : (String(out || '') ? String(out) : 'none');
-        return { text: text, value: out };
+        var raw = _ceWorldExtractRaw.join('\n\n--- repair ---\n\n');
+        var got = (out === null) ? '(unreadable, twice)' : (String(out || '') ? String(out) : 'none');
+        return { text: 'Read as: ' + got + '\n\n' + raw, value: out };
     });
 }
 
@@ -76576,7 +76590,7 @@ var CE_BENCH_SUITES: any[] = [
           run: function() { return _ceBenchWorldRun('bq_oath'); },
           check: function(r: any) {
               var v = (r.value === null) ? '' : String(r.value || '').toLowerCase();
-              if (r.value === null) return _ceBenchVerdict(false, 'came back as conversation');
+              if (r.value === null) return _ceBenchVerdict(false, 'unreadable, twice');
               if (!v) return _ceBenchVerdict(false, 'answered none');
               var ok = v.indexOf('abbey') >= 0 && v.indexOf('wax') >= 0;
               return _ceBenchVerdict(ok, ok ? 'names both' : 'missing the abbey or the wax');
@@ -76585,7 +76599,7 @@ var CE_BENCH_SUITES: any[] = [
           contract: 'A question the conversation never touched comes back as none.',
           run: function() { return _ceBenchWorldRun('bq_law'); },
           check: function(r: any) {
-              if (r.value === null) return _ceBenchVerdict(false, 'came back as conversation');
+              if (r.value === null) return _ceBenchVerdict(false, 'unreadable, twice');
               return _ceBenchVerdict(String(r.value || '') === '',
                                      String(r.value || '') ? 'wrote an answer' : 'none');
           } }
@@ -76648,13 +76662,44 @@ async function _ceBenchSave(): Promise<void> {
 
 // One test, CE_BENCH_RUNS times, one call after another. Every run's whole reply is kept, so a
 // failing run's reasoning can be read rather than inferred from its outcome.
+// [BENCH-PACE] A BUDGET WALL IS WAITED OUT AND THE SAME RUN IS TRIED AGAIN. The 3.14.10 bench
+// stopped "A settled question" at 14 of 20 on "Insufficient output token budget", and a count
+// out of 14 cannot be compared with one out of 20. Polled with timers.sleep rather than
+// waitForAllowedOutput, which deadlocks from a button callback (see aeBudgetReport). The
+// allowance refills only while the author has used the script recently, so the wait is capped
+// and Stop is honoured on every tick. Any other transport failure still stops [BENCH-INFRA].
+var CE_BENCH_WAIT_MAX_MS = 180000;
+
+function _ceBenchIsBudget(msg: string): boolean {
+    var m = String(msg || '').toLowerCase();
+    return m.indexOf('budget') >= 0 || m.indexOf('insufficient output') >= 0;
+}
+
+async function _ceBenchWaitAllowance(msg: string, label: string): Promise<boolean> {
+    var need = 0;
+    var mm = /requested:\s*(\d+)/i.exec(String(msg || ''));
+    if (mm) need = Number(mm[1]) || 0;
+    if (!need) need = 500;
+    var start = Date.now();
+    while (!_ceBench.stop && Date.now() - start < CE_BENCH_WAIT_MAX_MS) {
+        var have = diagBudO();
+        if (have < 0 || have >= need) return true;
+        var secs = Math.ceil((CE_BENCH_WAIT_MAX_MS - (Date.now() - start)) / 1000);
+        _ceBench.note = String(label) + ': waiting for the allowance to refill (' + String(have)
+                      + ' of ' + String(need) + ' tokens). Gives up in ' + String(secs) + 's.';
+        _ceBenchPublish();
+        try { await api.v1.timers.sleep(3000); } catch (eBw) { return false; }
+    }
+    return false;
+}
+
 async function _ceBenchRunOne(sid: string, tid: string): Promise<string> {
     var f: any = _ceBenchFind(sid, tid);
     if (!f) return 'That test is gone.';
     var key = _ceBenchKey(sid, tid);
     var res: any = { suite: String(sid), test: String(tid), label: String(f.test.label),
                      contract: String(f.test.contract), runs: [], failed: 0, total: 0,
-                     infra: '', at: Date.now() };
+                     infra: '', walls: 0, at: Date.now() };
     _ceBench.results[key] = res;
     for (var n = 0; n < CE_BENCH_RUNS; n++) {
         if (_ceBench.stop) { res.infra = 'Stopped after ' + String(res.runs.length) + ' runs.'; break; }
@@ -76668,6 +76713,10 @@ async function _ceBenchRunOne(sid: string, tid: string): Promise<string> {
             if (!v.ok) res.failed++;
         } catch (eBr) {
             var msg = String((eBr && (eBr as any).message) || eBr || 'failed');
+            if (_ceBenchIsBudget(msg) && res.walls < 5) {          // [BENCH-PACE]
+                res.walls++;
+                if (await _ceBenchWaitAllowance(msg, String(f.test.label))) { n--; continue; }
+            }
             if (_ceGenFailKind(eBr) === 'transport') {          // [BENCH-INFRA]
                 res.infra = 'The call did not reach the model after ' + String(res.runs.length)
                           + ' runs: ' + msg;

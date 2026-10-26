@@ -1,0 +1,650 @@
+{
+  "ce": "bench",
+  "version": 1,
+  "exportedAt": 1792989445308,
+  "runsPerTest": 20,
+  "results": {
+    "eval:seen": {
+      "suite": "eval",
+      "test": "seen",
+      "label": "A brave act, seen",
+      "contract": "A brave act that other people saw moves Reputation: the outcome is fame.",
+      "runs": [
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"carried out the miller’s two children\", \"outcome\": \"fame\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"carried out the miller’s two children\", \"outcome\": \"fame\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"carried out the miller’s two children\", \"outcome\": \"fame\"}"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"carried out the miller’s two children\", \"outcome\": \"fame\"}"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"carried out the miller’s two children\", \"outcome\": \"fame\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"carried out the miller’s two children\", \"outcome\": \"fame\"}"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"carried out the miller’s two children\", \"outcome\": \"fame\"}"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"carried out the miller’s two children\", \"outcome\": \"fame\"}"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"carried out the miller’s two children\", \"outcome\": \"fame\"}"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"carried out the miller’s two children\", \"outcome\": \"fame\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"carried out the miller’s two children\", \"outcome\": \"fame\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"carried out the miller’s two children\", \"outcome\": \"fame\"}"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"carried out the miller’s two children\", \"outcome\": \"fame\"}"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"carried out the miller’s two children\", \"outcome\": \"fame\"}"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"carried out the miller’s two children\", \"outcome\": \"fame\"}"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"carried out the miller’s two children\", \"outcome\": \"fame\"}"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"carried out the miller’s two children\", \"outcome\": \"fame\"}"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"carried out the miller’s two children\", \"outcome\": \"fame\"}"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"carried out the miller’s two children\", \"outcome\": \"fame\"}"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"carried out the miller’s two children\", \"outcome\": \"fame\"}"
+        }
+      ],
+      "failed": 0,
+      "total": 20,
+      "infra": "",
+      "at": 1792987363749
+    },
+    "eval:alone": {
+      "suite": "eval",
+      "test": "alone",
+      "label": "A brave act, unseen",
+      "contract": "A brave act nobody saw changes nothing: the outcome is unchanged.",
+      "runs": [
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\"evidence\": \"beat the flames out with a wet sack\", \"outcome\": \"unchanged\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\"evidence\": \"beat the flames out\", \"outcome\": \"unchanged\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\"evidence\": \"burned both hands beating out flames\", \"outcome\": \"unchanged\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\"evidence\": \"beat the flames out with a wet sack\", \"outcome\": \"unchanged\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\"evidence\": \"beat the flames out with a wet sack\", \"outcome\": \"unchanged\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\"evidence\": \"beat the flames out with a wet sack\", \"outcome\": \"unchanged\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\"evidence\": \"burned both hands beating out flames\", \"outcome\": \"unchanged\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\"evidence\": \"beat the flames out with a wet sack\", \"outcome\": \"unchanged\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\"evidence\": \"beat the flames out with a wet sack\", \"outcome\": \"unchanged\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\"evidence\": \"beat the flames out with a wet sack\", \"outcome\": \"unchanged\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\"evidence\": \"beat the flames out with a wet sack\", \"outcome\": \"unchanged\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\n  \"evidence\": \"\",\n  \"outcome\": \"unchanged\"\n}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\"evidence\": \"beat the flames out with a wet sack\", \"outcome\": \"unchanged\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\n  \"evidence\": \"\",\n  \"outcome\": \"unchanged\"\n}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\n  \"evidence\": \"\",\n  \"outcome\": \"unchanged\"\n}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\"evidence\": \"burned both hands beating out flames\", \"outcome\": \"unchanged\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\"evidence\": \"burned both hands beating out flames\", \"outcome\": \"unchanged\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\"evidence\":\"\",\"outcome\":\"unchanged\"}"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\"evidence\": \"burned both hands beating out flames\", \"outcome\": \"unchanged\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\"evidence\": \"beat the flames out with a wet sack\", \"outcome\": \"unchanged\"}\n```"
+        }
+      ],
+      "failed": 0,
+      "total": 20,
+      "infra": "",
+      "at": 1792987420715
+    },
+    "eval:counted": {
+      "suite": "eval",
+      "test": "counted",
+      "label": "The same act, told again",
+      "contract": "An act already counted is not counted again when people talk about it later: the outcome is unchanged.",
+      "runs": [
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\n  \"evidence\": \"\",\n  \"same\": \"no\",\n  \"outcome\": \"unchanged\"\n}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\"evidence\": \"\", \"same\": \"no\", \"outcome\": \"unchanged\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\n  \"evidence\": \"\",\n  \"same\": \"\",\n  \"outcome\": \"unchanged\"\n}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\n\"evidence\": \"\",\n\"same\": \"\",\n\"outcome\": \"unchanged\"\n}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\n  \"evidence\": \"\",\n  \"same\": \"\",\n  \"outcome\": \"unchanged\"\n}\n```"
+        },
+        {
+          "ok": false,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"ran in through the smoke\", \"same\": \"no\", \"outcome\": \"fame\"}"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\"evidence\": \"\", \"same\": \"\", \"outcome\": \"unchanged\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\"evidence\": \"\", \"same\": \"no\", \"outcome\": \"unchanged\"}"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\"evidence\": \"\", \"same\": \"\", \"outcome\": \"unchanged\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\n\"evidence\": \"\",\n\"same\": \"\",\n\"outcome\": \"unchanged\"\n}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\n  \"evidence\": \"\",\n  \"same\": \"\",\n  \"outcome\": \"unchanged\"\n}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\n\"evidence\": \"\",\n\"same\": \"\",\n\"outcome\": \"unchanged\"\n}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\"evidence\": \"\", \"same\": \"\", \"outcome\": \"unchanged\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\n  \"evidence\": \"\",\n  \"same\": \"no\",\n  \"outcome\": \"unchanged\"\n}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\"evidence\": \"\", \"same\": \"\", \"outcome\": \"unchanged\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\n  \"evidence\": \"\",\n  \"same\": \"no\",\n  \"outcome\": \"unchanged\"\n}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\n\"evidence\": \"\",\n\"same\": \"\",\n\"outcome\": \"unchanged\"\n}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\n\"evidence\": \"\",\n\"same\": \"no\",\n\"outcome\": \"unchanged\"\n}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\n  \"evidence\": \"\",\n  \"same\": \"no\",\n  \"outcome\": \"unchanged\"\n}\n```"
+        },
+        {
+          "ok": false,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"ran in through the smoke\", \"same\": \"no\", \"outcome\": \"fame\"}"
+        }
+      ],
+      "failed": 2,
+      "total": 20,
+      "infra": "",
+      "at": 1792987675428
+    },
+    "eval:newact": {
+      "suite": "eval",
+      "test": "newact",
+      "label": "A new act, after the counted one",
+      "contract": "A different brave act that people saw, after the counted one, still moves Reputation: the outcome is fame.",
+      "runs": [
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\n  \"evidence\": \"caught its bridle and dragged it to a stop\",\n  \"same\": \"no\",\n  \"outcome\": \"fame\"\n}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\":\"stopped bolting horse\", \"same\":\"no\", \"outcome\":\"fame\"}"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"caught its bridle and dragged it to a stop\", \"same\": \"no\", \"outcome\": \"fame\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\n\"evidence\": \"caught its bridle and dragged it to a stop\",\n\"same\": \"no\",\n\"outcome\": \"fame\"\n}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"caught the bolting cart horse\", \"same\": \"no\", \"outcome\": \"fame\"}"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"caught the bolting cart horse\", \"same\": \"no\", \"outcome\": \"fame\"}"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"caught the bolting cart horse\", \"same\": \"no\", \"outcome\": \"fame\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"caught the bolting cart horse\", \"same\": \"no\", \"outcome\": \"fame\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"caught the bolting cart horse\", \"same\": \"no\", \"outcome\": \"fame\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\n  \"evidence\": \"caught its bridle and dragged it to a stop\",\n  \"same\": \"no\",\n  \"outcome\": \"fame\"\n}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"caught its bridle and dragged it to a stop\", \"same\": \"no\", \"outcome\": \"fame\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\n  \"evidence\": \"caught the bolting cart horse\",\n  \"same\": \"no\",\n  \"outcome\": \"fame\"\n}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\n  \"evidence\": \"caught the bolting cart horse\",\n  \"same\": \"no\",\n  \"outcome\": \"fame\"\n}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"caught the bolting cart horse\", \"same\": \"no\", \"outcome\": \"fame\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\n\"evidence\": \"caught the bolting cart horse\",\n\"same\": \"no\",\n\"outcome\": \"fame\"\n}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"caught the bolting cart horse\", \"same\": \"no\", \"outcome\": \"fame\"}"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\n  \"evidence\": \"caught the bolting cart horse\",\n  \"same\": \"no\",\n  \"outcome\": \"fame\"\n}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"caught the bolting cart horse\", \"same\": \"no\", \"outcome\": \"fame\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"caught the bolting cart horse\", \"same\": \"no\", \"outcome\": \"fame\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\n  \"evidence\": \"caught the bolting cart horse\",\n  \"same\": \"no\",\n  \"outcome\": \"fame\"\n}\n```"
+        }
+      ],
+      "failed": 0,
+      "total": 20,
+      "infra": "",
+      "at": 1792987733445
+    },
+    "world:settled": {
+      "suite": "world",
+      "test": "settled",
+      "label": "A settled question",
+      "contract": "A question the conversation settled is answered from what the author said: the answer names the abbey and the wax.",
+      "runs": [
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "The sisters' mother swore an oath to the old abbey that every scrap of wax would go to its candles. Though the abbey burned down forty years ago, they keep the oath anyway, storing the accumulating wax in their cellar."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "The sisters' mother swore an oath to the old abbey that every scrap of wax from their hives would go to its candles. Though the abbey burned down forty years ago, the sisters keep the oath. They store the wax in their cellar, where it has been piling up ever since."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "The sisters' mother swore an oath to the old abbey that every scrap of wax would go to its candles. Though the abbey is gone, the sisters keep the oath, storing the accumulating wax in their cellar."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "The sisters' mother swore an oath that every scrap of wax from their hives would go to the candles of the old abbey. They keep the oath even though the abbey burned down forty years ago, storing the accumulating wax in their cellar."
+        },
+        {
+          "ok": false,
+          "why": "came back as conversation",
+          "text": "(came back as conversation, twice)"
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "The sisters' mother swore an oath to the old abbey that every scrap of wax would go to its candles. The abbey burned down forty years ago but the sisters still keep the oath, storing the accumulating wax in their cellar."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "The sisters' mother swore an oath to the old abbey that every scrap of their wax would go to its candles. The abbey burned down forty years ago, but they keep the oath anyway, storing the accumulating wax in their cellar."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "The sisters' mother swore an oath to the old abbey that every scrap of wax would go to its candles. The abbey burned down forty years ago, but they keep the oath anyway."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "The mother of the three sisters swore an oath to the old abbey that every scrap of wax from their hives would go to its candles. The abbey burned down forty years ago, but the sisters keep the oath anyway, storing the accumulating wax in their cellar."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "The sisters' mother swore an oath to the old abbey that every scrap of wax would go to its candles. They keep the oath anyway, storing the wax in the cellar where it has been piling up for forty years."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "The family swore an oath to the old abbey that every scrap of wax would go to its candles. They keep the oath, storing the wax in the cellar where it has been piling up for forty years."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "The family swore an oath to the old abbey that every scrap of wax would go to its candles. The abbey burned down forty years ago, but the family keeps the oath anyway, storing the wax in their cellar where it has been piling up ever since."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "The sisters' mother swore an oath to the old abbey that every scrap of their wax would go to its candles. The abbey burned down forty years ago, but they keep the oath anyway, storing the wax in the cellar where it has been piling up ever since."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "The sisters' mother swore an oath to the old abbey that every scrap of wax would go to its candles. They keep the oath anyway, storing the wax in the cellar where it has been piling up for forty years."
+        }
+      ],
+      "failed": 1,
+      "total": 14,
+      "infra": "The call did not reach the model after 14 runs: Insufficient output token budget. Requested: 450, Available: 407",
+      "at": 1792989107795
+    },
+    "world:untouched": {
+      "suite": "world",
+      "test": "untouched",
+      "label": "An untouched question",
+      "contract": "A question the conversation never touched comes back as none.",
+      "runs": [
+        {
+          "ok": true,
+          "why": "none",
+          "text": "none"
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "none"
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "none"
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "none"
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "none"
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "none"
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "none"
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "none"
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "none"
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "none"
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "none"
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "none"
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "none"
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "none"
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "none"
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "none"
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "none"
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "none"
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "none"
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "none"
+        }
+      ],
+      "failed": 0,
+      "total": 20,
+      "infra": "",
+      "at": 1792989426016
+    }
+  }
+}

@@ -1,6 +1,6 @@
 # CE-INDEX
 
-Engine: 3.14.10
+Engine: 3.14.11
 
 The grep directory for `character-engine.naiscript`: subject, token, the rule in one line. The reasoning lives at the code under each token -- `grep '\[TOKEN\]'` finds it. This file is a locator, not a second copy of the comments; a line that grows into an explanation should move to its site.
 
@@ -577,6 +577,7 @@ Update this file in the same patch as any change it describes.
 - `BENCH-FIXTURE` -- fixtures use nouns no story uses and are never lifted from a failing input; each pair differs by ONE fact
 - `BENCH-TRANSPORT` -- each test uses its prompt's own transport. The world suite goes through generateWithStory and is run in an empty story
 - `BENCH-INFRA` -- a transport failure stops the test and is reported apart from the count; it is not a failing run
+- `BENCH-PACE` -- a budget wall is waited out (polled, capped, Stop honoured) and the same run tried again, so every count is out of 20
 - `STORAGE_BENCH` -- tempStorage `ce_bench_v1`: this session's counts. They leave through Export and never touch the story file
 
 ## Measured platform facts
