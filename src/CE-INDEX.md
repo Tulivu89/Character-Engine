@@ -1,6 +1,6 @@
 # CE-INDEX
 
-Engine: 3.14.9
+Engine: 3.14.10
 
 The grep directory for `character-engine.naiscript`: subject, token, the rule in one line. The reasoning lives at the code under each token -- `grep '\[TOKEN\]'` finds it. This file is a locator, not a second copy of the comments; a line that grows into an explanation should move to its site.
 
@@ -143,6 +143,7 @@ Update this file in the same patch as any change it describes.
 - `LADDER-BLOCK` -- PROMPTS 8, locations only
 - `EXTRACT-HANDOFF` -- extraction rides the CHAT family's prefix (that is what makes it affordable) while PROMPTS 3.2 puts it in the MACHINE family
 - `EXTRACT-RELAPSE` -- a reply that is a question is not an answer, and it is detectable -- a question mark PLUS an address or hortative, both required
+- `EXTRACT-SAID` -- the quotes come FIRST and the answer is made from them; "SAID: nothing" ends the chain, and code checks each quote against the transcript, so a reply with no quote it can find is none
 - `EXTRACT-REROLL` -- one field, on demand, overwriting
 - `SCOPE-ONE-STAGE` -- Scope and Locations are ONE stage, two phases, at every depth: no rung renders the scale form, a rung renders the workspace
 - `SCOPE-DEPTH` -- where the author is standing, in tempStorage per WORLDPIPE 7.5 -- session state
@@ -564,6 +565,10 @@ Update this file in the same patch as any change it describes.
 - `ICON-FIT` -- an icon is fitted and centred on `cb` when it has one, one box per SET and never per icon
 - `ICON-WEIGHT` -- `sw` is a stroke in SOURCE units, for line art authored as fills
 - `ICON-TWO-SETS` -- the kit glyph set and CE_ICON_LIB are addressed differently -- a function name versus a string an entity stored -- so only one of them can never be renamed
+
+### Measures
+
+- `EVAL-SAME` -- the counted act is stated BEFORE the evidence is chosen, the evidence is the deed and never a reaction to it, and "same": "yes" is a no-op in ceEvalReadOutcome whatever outcome was written
 
 ### Prompt Bench
 
