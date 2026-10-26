@@ -4,9 +4,9 @@ id: ce000002-0000-0000-0000-000000000001
 name: Character Engine
 createdAt: 1776400000000
 updatedAt: 1793000000000
-version: 3.14.9
+version: 3.14.10
 author: AmbiProp
-description: Character Engine v3.14.9
+description: Character Engine v3.14.10
 memoryLimit: 128
 ---*/
 
@@ -20302,12 +20302,34 @@ function ceEvalPrompt(def: any, subjectName: string, lastEvidence: string): stri
         lines.push('');
         lines.push('Nothing counts unless ' + gate + '.');
     }
+    // [EVAL-SAME] THE COUNTED ACT IS STATED BEFORE THE EVIDENCE IS CHOSEN, and the comparison
+    // is a field the model writes, not a rule it is trusted to apply. Bench, 3.14.9: with the
+    // line below the outcome list, "The same act, told again" failed 20 of 20 -- every run
+    // skipped the counted phrase and quoted the crowd's REACTION to the same deed ("someone
+    // near the cider stall started clapping") as new evidence. A rule placed after the choice
+    // it constrains is read after the choice is made. So the counted act comes first, the
+    // evidence must be the deed rather than a reaction, and "same" commits the comparison
+    // before the outcome. Code makes "same": "yes" a no-op in ceEvalReadOutcome.
+    var seen = String(lastEvidence || '').trim();
+    if (seen) {
+        lines.push('');
+        lines.push('ALREADY COUNTED: "' + seen + '". That act has been counted once. The story '
+                 + 'above may still contain it, retell it, or show people reacting to it \u2014 '
+                 + 'praise, thanks, gossip, applause. None of that is a new act.');
+    }
     lines.push('');
     lines.push('Return ONLY valid JSON with these exact keys, in this order:');
-    lines.push('  "evidence": ONE short phrase (under 12 words) naming the specific thing in '
-             + 'the recent story that bears on this \u2014 an action, a line, a refusal. Evidence, '
-             + 'not a verdict. Write this FIRST and decide from it. Leave empty if nothing in '
-             + 'the story bears on it.');
+    lines.push('  "evidence": ONE short phrase (under 12 words) naming the act by ' + who + ' '
+             + 'that bears on this \u2014 the deed itself, a line they spoke, a refusal \u2014 '
+             + 'never someone\u2019s reaction to it. Evidence, not a verdict. Write this FIRST '
+             + 'and decide from it.'
+             + (seen ? ' Name a different act than the one already counted if there is one.' : '')
+             + ' Leave empty if nothing in the story bears on it.');
+    if (seen) {
+        lines.push('  "same": "yes" if your evidence is the act already counted \u2014 the same '
+                 + 'deed, however it is worded or wherever it is retold \u2014 or "no" if it is '
+                 + 'a different act.');
+    }
     lines.push('  "outcome": Exactly one of:');
     lines.push('      "' + CE_EVAL_NOOP + '" \u2014 ' + CE_EVAL_NOOP_TEXT);
     var outs: any[] = (def && def.outcomes) || [];
@@ -20317,14 +20339,8 @@ function ceEvalPrompt(def: any, subjectName: string, lastEvidence: string): stri
         var mean = String(o.meaning || '').trim();
         lines.push('      "' + String(o.id) + '" \u2014 ' + (mean || 'no definition given.'));
     }
-    // [EVAL-SEEN] Placed AFTER the outcome list and before the format rules, so it reads as a
-    // constraint on the answer rather than as one more thing to classify. Absent entirely on
-    // the first run -- an empty already-counted line invites the model to wonder what it means.
-    var seen = String(lastEvidence || '').trim();
-    if (seen) {
-        lines.push('');
-        lines.push('Already counted, do not count again: "' + seen + '"');
-    }
+    // [EVAL-SEEN] Absent entirely on the first run -- an empty already-counted line invites the
+    // model to wonder what it means. Its placement is EVAL-SAME's, above.
     lines.push('');
     lines.push('No markdown fences. No extra keys. Return nothing but the JSON object.');
     return lines.join('\n');
@@ -20348,17 +20364,26 @@ function ceEvalMessages(def: any, who: string, seen: string, storyBlock: string)
 }
 // The one reader of a reply. `picked` is the matched outcome record; null covers the no-op, an
 // unknown word and a reply with no JSON, which `parsed` and `outcome` tell apart.
-function ceEvalReadOutcome(text: string, def: any): any {
+// [EVAL-SAME] With an already-counted act, "same": "yes" is the no-op whatever outcome was
+// written: the model reads whether two descriptions are one deed, and code decides what that
+// means. `repeat` says the coercion happened, so a log or the bench can show why.
+function ceEvalReadOutcome(text: string, def: any, seen?: string): any {
     var outs: any[] = ((def && def.outcomes) || []).filter(function(o: any) { return o && o.id; });
     var parsed: any = null;
     try { parsed = extractJSON(String(text || '')); } catch (eJ) { parsed = null; }
-    if (!parsed) return { parsed: false, outcome: '', evidence: '', picked: null };
+    if (!parsed) return { parsed: false, outcome: '', evidence: '', picked: null, repeat: false };
     var got = String((parsed.outcome || '')).trim().toLowerCase();
+    var evidence = String(parsed.evidence || '').trim();
+    var same = String(parsed.same || '').trim().toLowerCase();
+    if (String(seen || '').trim() && same === 'yes') {
+        return { parsed: true, outcome: CE_EVAL_NOOP, evidence: evidence, picked: null,
+                 repeat: got !== CE_EVAL_NOOP };
+    }
     var picked: any = null;
     for (var i = 0; i < outs.length; i++) {
         if (String(outs[i].id).trim().toLowerCase() === got) { picked = outs[i]; break; }
     }
-    return { parsed: true, outcome: got, evidence: String(parsed.evidence || '').trim(), picked: picked };
+    return { parsed: true, outcome: got, evidence: evidence, picked: picked, repeat: false };
 }
 
 async function ceEvalRun(def: any, cfg: any): Promise<boolean> {
@@ -20385,8 +20410,9 @@ async function ceEvalRun(def: any, cfg: any): Promise<boolean> {
             ceEvalMessages(def, who, seen, ceStoryBlockText()), ceEvalParams());
     } catch (eGen) { api.v1.error('[AE:eval] generate:', eGen); return false; }
 
-    var read: any = ceEvalReadOutcome((resp && resp.choices && resp.choices[0] && resp.choices[0].text) || '', def);
+    var read: any = ceEvalReadOutcome((resp && resp.choices && resp.choices[0] && resp.choices[0].text) || '', def, seen);
     if (!read.parsed) { aeLog('[AE:eval] no JSON back for ' + def.id); return false; }
+    if (read.repeat) { aeLog('[AE:eval] ' + def.id + ' named the act already counted; no-op'); }
 
     // [EVAL-NOOP] Anything unrecognised coerces to the no-op, the same call _ceApplyPressure
     // makes: a malformed reply must never move a value. The failure directions are not
@@ -67242,11 +67268,19 @@ var CE_P_WORLD_PICK_TAIL =
 // IT IS NOT A PROHIBITION ON THE SUBJECT. Two questions about one story SHOULD touch the
 // same material -- the ask is for a different thing to be said about it, which is why the
 // wording is about repeating a SENTENCE rather than about mentioning a topic.
+// [EXTRACT-SAID] THE QUOTES COME FIRST AND THE ANSWER IS BUILT FROM THEM. Bench, 3.14.9: "An
+// untouched question" failed 7 of 20. The conversation never said who keeps order, and seven
+// runs wrote a constable, a bailiff or a guild anyway, each one extending the feud the
+// conversation DID discuss. The ask was "write the answer" with "none" as its last line: a
+// pattern with the exemption after it. Now the first thing written is the evidence, copied
+// word for word, and "nothing" ends the chain before an answer exists. Code checks every quote
+// against the transcript (_ceWorldQuoteFound) and treats a reply with no quote it can find as
+// none, so an invented quote cannot carry an invented answer.
 function _ceWorldExtractAsk(label: string, scope: string, others?: string): string {
     return 'The conversation above is finished. You are no longer talking to the author, and '
          + 'nothing you write now is read by a person \u2014 it is stored in a field. Do not '
          + 'ask a question, do not suggest what to do next, and do not address anyone.\n\n'
-         + 'Write the answer to ONE question, using only the conversation above.\n\n'
+         + 'Fill ONE field, using only the conversation above.\n\n'
          + 'QUESTION: ' + String(label || '') + '\n'
          + 'WHAT BELONGS IN IT: ' + String(scope || '') + '\n\n'
          + (String(others || '').trim()
@@ -67255,17 +67289,69 @@ function _ceWorldExtractAsk(label: string, scope: string, others?: string): stri
                 + 'Those are answers to different questions and are already stored. Do not '
                 + 'restate them, summarise them, or say the same thing in other words. They '
                 + 'may share a subject with yours \u2014 what must differ is what you say '
-                + 'about it. If everything you would write is already up there, reply with '
-                + 'the single word: none\n\n')
+                + 'about it.\n\n')
              : '')
-         + 'Use only what the conversation actually settled. Do not extend it, tidy it, or '
-         + 'fill a gap with something reasonable. Keep every name the author used, spelled '
-         + 'their way.\n\n'
-         + 'Do not carry over anything they raised and then rejected. A discarded idea is '
-         + 'still in the text above and reads exactly like an adopted one.\n\n'
-         + 'One to three sentences of plain prose, stating what stays TRUE rather than what '
-         + 'happened. No heading, no label, no quotation marks, no markdown.\n\n'
-         + 'If the conversation did not settle this, reply with the single word: none';
+         + 'Write two parts, in this order.\n\n'
+         + 'SAID: copy, word for word, each sentence from the conversation that answers this '
+         + 'question \u2014 something the author said, or agreed to. A sentence about something '
+         + 'else does not count because it mentions the same people, places or things. Leave '
+         + 'out anything the author raised and then rejected: a discarded idea is still in the '
+         + 'text above and reads exactly like an adopted one. One sentence per line. If no '
+         + 'sentence answers this question, write: SAID: nothing\n\n'
+         + 'ANSWER: if SAID is nothing'
+         + (String(others || '').trim() ? ', or everything you would write is already written above' : '')
+         + ', write: ANSWER: none\n'
+         + 'Otherwise, one to three sentences of plain prose made only from the lines under '
+         + 'SAID, stating what stays TRUE rather than what happened. Add nothing they do not '
+         + 'say: no reasons, consequences or details of your own. Keep every name the author '
+         + 'used, spelled their way. No heading, no quotation marks, no markdown.';
+}
+
+// [EXTRACT-SAID] The reply in its parts. `form` is false when either label is missing, which is
+// a reply to repair rather than to read.
+function _ceWorldExtractRead(text: string): any {
+    var t = String(text || '');
+    // Labels may come bold, with the colon inside or outside the asterisks.
+    var sm = /(^|\n)[ \t]*\**[ \t]*SAID[ \t]*\**[ \t]*:[ \t]*\**/i.exec(t);
+    var am = /(^|\n)[ \t]*\**[ \t]*ANSWER[ \t]*\**[ \t]*:[ \t]*\**/i.exec(t);
+    if (!sm || !am || am.index < sm.index) return { form: false, said: [], answer: '' };
+    var saidTxt = t.slice(sm.index + sm[0].length, am.index);
+    var ansTxt = t.slice(am.index + am[0].length).trim();
+    var said: string[] = [];
+    var rows = saidTxt.split('\n');
+    for (var i = 0; i < rows.length; i++) {
+        var r = rows[i].replace(/^[\s\-*\u2022>]+/, '').replace(/^["\u201c\u2018']+|["\u201d\u2019']+$/g, '').trim();
+        if (!r || /^nothing\.?$/i.test(r)) continue;
+        said.push(r);
+    }
+    ansTxt = ansTxt.replace(/^["\u201c]+|["\u201d]+$/g, '').trim();
+    return { form: true, said: said, answer: ansTxt };
+}
+
+function _ceWorldNorm(s: string): string {
+    return String(s || '').toLowerCase().replace(/[\u2018\u2019]/g, "'")
+        .replace(/[^a-z0-9' ]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+// [EXTRACT-SAID] Is this quote in the conversation? A lookup, so code does it. Copied verbatim
+// is the ask, but a model that drops a word or changes a tense has still quoted, so a quote
+// also passes when four in five of its longer words are in one turn.
+function _ceWorldQuoteFound(quote: string, base: any[]): boolean {
+    var q = _ceWorldNorm(quote);
+    if (!q) return false;
+    var words = q.split(' ').filter(function(w: string) { return w.length >= 4; });
+    for (var i = 0; i < (base || []).length; i++) {
+        var m: any = base[i];
+        if (!m || m.role === 'system') continue;
+        var turn = _ceWorldNorm(String(m.content || ''));
+        if (turn.indexOf(q) >= 0) return true;
+        if (words.length >= 3) {
+            var hit = 0;
+            for (var j = 0; j < words.length; j++) { if (turn.indexOf(words[j]) >= 0) hit++; }
+            if (hit / words.length >= 0.8) return true;
+        }
+    }
+    return false;
 }
 
 // ── The scoped chat  [SCOPE-CHAT] ───────────────────────────────────────────
@@ -74057,8 +74143,26 @@ async function ceWorldExtract(): Promise<string> {
 // than being told about it in the third person.
 // [BENCH-INPUTS] The extraction's sampling, named once for the batch, the re-roll and the bench.
 function ceWorldExtractParams(model?: string): any {
-    return { model: String(model || ceUtilityModel()), max_tokens: 300, temperature: 0.7,
-             enable_thinking: false };
+    return { model: String(model || ceUtilityModel()), max_tokens: 450, temperature: 0.7,
+             enable_thinking: false };   // [EXTRACT-SAID] the quotes ride ahead of the answer
+}
+
+// [EXTRACT-SAID] What a reply means: '' for none, the answer to write, or null for a reply that
+// cannot be read (no SAID/ANSWER, or an answer that is conversation).
+function _ceWorldExtractJudge(out: string, base: any[]): string | null {
+    var rd: any = _ceWorldExtractRead(out);
+    if (!rd.form) {
+        var bare = String(out || '').trim().toLowerCase();
+        return (bare === 'none' || bare === 'none.') ? '' : null;
+    }
+    var found = 0;
+    for (var i = 0; i < rd.said.length; i++) { if (_ceWorldQuoteFound(rd.said[i], base)) found++; }
+    if (!found) return '';
+    var a = String(rd.answer || '').trim();
+    var low = a.toLowerCase();
+    if (!a || low === 'none' || low === 'none.') return '';
+    if (ceLooksConversational(a)) return null;
+    return a;
 }
 
 async function _ceWorldExtractOne(base: any[], params: any, q: any,
@@ -74069,22 +74173,19 @@ async function _ceWorldExtractOne(base: any[], params: any, q: any,
     var res: any = await aeDiagGenerateWithStory('world:extract', msgs, params,
                                                  undefined, undefined, 'background');
     var out = ceGenText(res);
-    var low = out.toLowerCase();
-    if (!out || low === 'none' || low === 'none.') return '';
-    if (!ceLooksConversational(out)) return out;
+    var v = _ceWorldExtractJudge(out, base);
+    if (v !== null) return v;
 
+    // REJECTED WITH THE REPAIR, ONCE. The model sees its own reply and the form it missed.
     msgs.push({ role: 'assistant', content: out });
     msgs.push({ role: 'user', content:
-        'That was a question, not an answer. Nobody will read it. Write the field itself: '
-      + 'one to three sentences stating what is true, with no question and no address to '
-      + 'anyone. If the conversation did not settle it, reply with the single word: none' });
+        'That reply is not in the form asked for, and nobody will read it. Write the two parts '
+      + 'and nothing else: first SAID: with the sentences copied from the conversation (or '
+      + 'SAID: nothing), then ANSWER: with one to three sentences made from them (or ANSWER: '
+      + 'none). No question, and no address to anyone.' });
     var res2: any = await aeDiagGenerateWithStory('world:extract:retry', msgs, params,
                                                   undefined, undefined, 'background');
-    var out2 = ceGenText(res2);
-    var low2 = out2.toLowerCase();
-    if (!out2 || low2 === 'none' || low2 === 'none.') return '';
-    if (ceLooksConversational(out2)) return null;
-    return out2;
+    return _ceWorldExtractJudge(ceGenText(res2), base);
 }
 
 // [EXTRACT-REROLL] ONE FIELD, ON DEMAND. The author's answer to a bad extraction, and the
@@ -76374,16 +76475,24 @@ var CE_BENCH_FIRE_AFTER =
   + 'well to thank her again. She nodded, filled her buckets, and went back up the hill to the '
   + 'hives.';
 var CE_BENCH_FIRE_COUNTED = 'carried the miller\u2019s two children out of the burning barn';
+// [BENCH-FIXTURE] "counted"'s pair: the same retelling, then a NEW public act. One fact apart,
+// so a fix that stops the retelling from counting is shown not to stop everything after it.
+var CE_BENCH_FIRE_NEWACT =
+    CE_BENCH_FIRE_AFTER
+  + '\n\nThat afternoon a cart horse bolted through the market square. Tamsin caught its '
+  + 'bridle and dragged it to a stop a few feet short of the children playing by the well, '
+  + 'with half the square watching.';
 
 function _ceBenchEvalRun(story: string, seen: string): Promise<any> {
     var def: any = _ceEvalSeedCopy();
     return aeDiagGenerate('bench:eval', ceEvalMessages(def, CE_BENCH_EVAL_WHO, seen, story),
                           ceEvalParams()).then(function(res: any) {
         var text = String((res && res.choices && res.choices[0] && res.choices[0].text) || '');
-        var read: any = ceEvalReadOutcome(text, def);
+        var read: any = ceEvalReadOutcome(text, def, seen);
         var outcome = !read.parsed ? '(no JSON)'
                     : (read.picked ? String(read.picked.id) : (String(read.outcome || '') || '(empty)'));
-        return { text: text, outcome: outcome };
+        return { text: text, outcome: outcome,
+                 shown: 'outcome: ' + outcome + (read.repeat ? ' (named the counted act)' : '') };
     });
 }
 
@@ -76441,16 +76550,21 @@ var CE_BENCH_SUITES: any[] = [
         { id: 'seen', label: 'A brave act, seen',
           contract: 'A brave act that other people saw moves Reputation: the outcome is fame.',
           run: function() { return _ceBenchEvalRun(CE_BENCH_FIRE_SEEN, ''); },
-          check: function(r: any) { return _ceBenchVerdict(r.outcome === 'fame', 'outcome: ' + r.outcome); } },
+          check: function(r: any) { return _ceBenchVerdict(r.outcome === 'fame', r.shown); } },
         { id: 'alone', label: 'A brave act, unseen',
           contract: 'A brave act nobody saw changes nothing: the outcome is unchanged.',
           run: function() { return _ceBenchEvalRun(CE_BENCH_FIRE_ALONE, ''); },
-          check: function(r: any) { return _ceBenchVerdict(r.outcome === CE_EVAL_NOOP, 'outcome: ' + r.outcome); } },
+          check: function(r: any) { return _ceBenchVerdict(r.outcome === CE_EVAL_NOOP, r.shown); } },
         { id: 'counted', label: 'The same act, told again',
           contract: 'An act already counted is not counted again when people talk about it later: '
                   + 'the outcome is unchanged.',
           run: function() { return _ceBenchEvalRun(CE_BENCH_FIRE_AFTER, CE_BENCH_FIRE_COUNTED); },
-          check: function(r: any) { return _ceBenchVerdict(r.outcome === CE_EVAL_NOOP, 'outcome: ' + r.outcome); } }
+          check: function(r: any) { return _ceBenchVerdict(r.outcome === CE_EVAL_NOOP, r.shown); } },
+        { id: 'newact', label: 'A new act, after the counted one',
+          contract: 'A different brave act that people saw, after the counted one, still moves '
+                  + 'Reputation: the outcome is fame.',
+          run: function() { return _ceBenchEvalRun(CE_BENCH_FIRE_NEWACT, CE_BENCH_FIRE_COUNTED); },
+          check: function(r: any) { return _ceBenchVerdict(r.outcome === 'fame', r.shown); } }
       ] },
     { id: 'world', label: 'World answers',
       note: 'Writing one world question from the conversation. Run this suite in an empty '

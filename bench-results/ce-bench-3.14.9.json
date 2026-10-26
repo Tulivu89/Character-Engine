@@ -1,0 +1,568 @@
+{
+  "ce": "bench",
+  "version": 1,
+  "exportedAt": 1792977531296,
+  "runsPerTest": 20,
+  "results": {
+    "eval:seen": {
+      "suite": "eval",
+      "test": "seen",
+      "label": "A brave act, seen",
+      "contract": "A brave act that other people saw moves Reputation: the outcome is fame.",
+      "runs": [
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"carried out the miller’s two children\", \"outcome\": \"fame\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"Carried out miller's children\", \"outcome\": \"fame\"}"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"Carried out miller's children\", \"outcome\": \"fame\"}"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"carried out the miller’s two children\", \"outcome\": \"fame\"}"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"carried out the miller’s two children\", \"outcome\": \"fame\"}"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"carried out the miller’s two children\", \"outcome\": \"fame\"}"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"carried out the miller’s two children\", \"outcome\": \"fame\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"carried out the miller’s two children\", \"outcome\": \"fame\"}"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"carried out the miller’s two children\", \"outcome\": \"fame\"}"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"carried out the miller’s two children\", \"outcome\": \"fame\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"Carried out miller's children\", \"outcome\": \"fame\"}"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"Carried out miller's children\", \"outcome\": \"fame\"}"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"carried out the miller’s two children\", \"outcome\": \"fame\"}"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"carried out the miller’s two children\", \"outcome\": \"fame\"}"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"carried out the miller’s two children\", \"outcome\": \"fame\"}"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"carried out the miller’s two children\", \"outcome\": \"fame\"}"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"Carried out miller's children\", \"outcome\": \"fame\"}"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"carried out the miller’s two children\", \"outcome\": \"fame\"}"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"carried out the miller’s two children\", \"outcome\": \"fame\"}"
+        },
+        {
+          "ok": true,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"carried out the miller’s two children\", \"outcome\": \"fame\"}"
+        }
+      ],
+      "failed": 0,
+      "total": 20,
+      "infra": "",
+      "at": 1792976484411
+    },
+    "eval:alone": {
+      "suite": "eval",
+      "test": "alone",
+      "label": "A brave act, unseen",
+      "contract": "A brave act nobody saw changes nothing: the outcome is unchanged.",
+      "runs": [
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\"evidence\": \"burned both hands beating out flames\", \"outcome\": \"unchanged\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\"evidence\": \"scorched wall found by miller\", \"outcome\": \"unchanged\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\"evidence\": \"Tamsin ran down, beat the flames out\", \"outcome\": \"unchanged\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\"evidence\": \"scorched wall found by miller\", \"outcome\": \"unchanged\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\"evidence\": \"burned both hands beating out flames\", \"outcome\": \"unchanged\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\"evidence\": \"the miller found the scorched wall\", \"outcome\": \"unchanged\"}"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\"evidence\": \"burned both hands beating out flames\", \"outcome\": \"unchanged\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\"evidence\": \"burned both hands beating out flames\", \"outcome\": \"unchanged\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\"evidence\": \"scorched wall found by miller\", \"outcome\": \"unchanged\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\"evidence\": \"Tamsin ran down, beat the flames out\", \"outcome\": \"unchanged\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\"evidence\": \"burned both hands beating out flames\", \"outcome\": \"unchanged\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\"evidence\": \"the miller found the scorched wall\", \"outcome\": \"unchanged\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\"evidence\": \"Tamsin ran down, beat the flames out\", \"outcome\": \"unchanged\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\"evidence\": \"scorched wall found by miller\", \"outcome\": \"unchanged\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\"evidence\": \"scorched wall found by miller\", \"outcome\": \"unchanged\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\"evidence\": \"scorched wall found by miller\", \"outcome\": \"unchanged\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\"evidence\": \"burned both hands beating out flames\", \"outcome\": \"unchanged\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\"evidence\": \"scorched wall found by miller\", \"outcome\": \"unchanged\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\"evidence\": \"scorched wall found by miller\", \"outcome\": \"unchanged\"}\n```"
+        },
+        {
+          "ok": true,
+          "why": "outcome: unchanged",
+          "text": "{\"evidence\": \"scorched wall found by miller\", \"outcome\": \"unchanged\"}\n```"
+        }
+      ],
+      "failed": 0,
+      "total": 20,
+      "infra": "",
+      "at": 1792976515158
+    },
+    "eval:counted": {
+      "suite": "eval",
+      "test": "counted",
+      "label": "The same act, told again",
+      "contract": "An act already counted is not counted again when people talk about it later: the outcome is unchanged.",
+      "runs": [
+        {
+          "ok": false,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"someone near the cider stall started clapping\", \"outcome\": \"fame\"}"
+        },
+        {
+          "ok": false,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"someone near the cider stall started clapping\", \"outcome\": \"fame\"}\n```"
+        },
+        {
+          "ok": false,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"someone near the cider stall started clapping\", \"outcome\": \"fame\"}"
+        },
+        {
+          "ok": false,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"someone near the cider stall started clapping\", \"outcome\": \"fame\"}\n```"
+        },
+        {
+          "ok": false,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"someone near the cider stall started clapping\", \"outcome\": \"fame\"}\n```"
+        },
+        {
+          "ok": false,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"someone near the cider stall started clapping\", \"outcome\": \"fame\"}\n```"
+        },
+        {
+          "ok": false,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"someone near the cider stall started clapping\", \"outcome\": \"fame\"}\n```"
+        },
+        {
+          "ok": false,
+          "why": "outcome: fame",
+          "text": "{\n  \"evidence\": \"someone near the cider stall started clapping\",\n  \"outcome\": \"fame\"\n}\n```"
+        },
+        {
+          "ok": false,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"someone near the cider stall started clapping\", \"outcome\": \"fame\"}"
+        },
+        {
+          "ok": false,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"someone near the cider stall started clapping\", \"outcome\": \"fame\"}"
+        },
+        {
+          "ok": false,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"someone near the cider stall started clapping\", \"outcome\": \"fame\"}\n```"
+        },
+        {
+          "ok": false,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"someone near the cider stall started clapping\", \"outcome\": \"fame\"}"
+        },
+        {
+          "ok": false,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"someone near the cider stall started clapping\", \"outcome\": \"fame\"}\n```"
+        },
+        {
+          "ok": false,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"someone near the cider stall started clapping\", \"outcome\": \"fame\"}\n```"
+        },
+        {
+          "ok": false,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"someone near the cider stall started clapping\", \"outcome\": \"fame\"}\n```"
+        },
+        {
+          "ok": false,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"someone near the cider stall started clapping\", \"outcome\": \"fame\"}\n```"
+        },
+        {
+          "ok": false,
+          "why": "outcome: fame",
+          "text": "{\n\"evidence\": \"someone near the cider stall started clapping\",\n\"outcome\": \"fame\"\n}\n```"
+        },
+        {
+          "ok": false,
+          "why": "outcome: fame",
+          "text": "{\n  \"evidence\": \"someone near the cider stall started clapping\",\n  \"outcome\": \"fame\"\n}\n```"
+        },
+        {
+          "ok": false,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"someone near the cider stall started clapping\", \"outcome\": \"fame\"}\n```"
+        },
+        {
+          "ok": false,
+          "why": "outcome: fame",
+          "text": "{\"evidence\": \"someone near the cider stall started clapping\", \"outcome\": \"fame\"}\n```"
+        }
+      ],
+      "failed": 20,
+      "total": 20,
+      "infra": "",
+      "at": 1792976553844
+    },
+    "world:settled": {
+      "suite": "world",
+      "test": "settled",
+      "label": "A settled question",
+      "contract": "A question the conversation settled is answered from what the author said: the answer names the abbey and the wax.",
+      "runs": [
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "The sisters' mother swore an oath to the old abbey that every scrap of wax from their hives would go to its candles. Though the abbey burned down forty years ago, they keep the oath, storing the accumulating wax in their cellar and refusing to sell any to the town's candle-makers."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "The sisters’ mother swore to the old abbey that every scrap of wax from their hives would go to its candles. Keeping the oath costs them the profit from selling wax to the candle-makers in the town below, and they have stored the accumulating wax in their cellar since the abbey burned down forty years ago."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "Their mother swore to the old abbey that every scrap of their beeswax would go to its candles, a vow the three sisters keep though the abbey burned down forty years ago and the wax piles up in their cellar."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "The sisters' mother swore an oath to the old abbey that every scrap of their beeswax would go to its candles, so they keep the oath even though the abbey burned down forty years ago and now only sell honey, leaving the wax to pile up in their cellar."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "The sisters’ mother swore an oath to the old abbey that every scrap of wax would go to its candles, and they keep the oath even though the abbey burned down forty years ago, storing the accumulating wax in their cellar."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "The sisters’ mother swore an oath to the old abbey that every scrap of wax from their hives would go to its candles. They keep this oath even though the abbey burned down forty years ago, storing the accumulating wax in their cellar and selling only the honey."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "The sisters' mother swore an oath to the old abbey that every scrap of their beeswax would go to its candles. They keep the oath though the abbey burned down forty years ago, storing the wax in the cellar where it has been piling up ever since."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "Their mother swore an oath to the old abbey that every scrap of their beeswax would go to its candles, and the sisters keep the oath even though the abbey burned down forty years ago, piling the unsold wax in their cellar."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "The sisters' mother swore an oath to the old abbey that every scrap of wax would go to its candles, a promise the three sisters still keep forty years after the abbey burned down by storing the wax in their cellar. This costs them a profitable trade with the town's candle-makers and the source of their feud."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "The sisters' mother swore an oath to the old abbey that every scrap of wax would go to its candles. Keeping the oath costs them a profitable trade with the town's candle-makers, and the wax has been piling up in their cellar for forty years since the abbey burned down."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "The sisters' mother swore an oath to the old abbey that every scrap of wax from their hives would go to its candles. Keeping the oath costs them the candle-makers' trade and the money their wax would bring, so they store it in the cellar where it has been piling up for forty years since the abbey burned down."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "The sisters' mother swore an oath to the old abbey that every scrap of wax from their hives would go to its candles, a vow they still keep even though the abbey burned down forty years ago, forcing them to store the accumulating wax in their cellar while selling only honey."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "The sisters’ mother swore an oath to the old abbey that every scrap of wax would go to its candles. Keeping the oath costs them the profit from selling the wax to the town’s candle-makers, and has resulted in a growing hoard of wax stored in their cellar since the abbey burned down forty years ago."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "The sisters' mother swore an oath to the old abbey that every scrap of wax would go to its candles, and they keep the oath even though the abbey burned down forty years ago, storing the wax in their cellar."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "The sisters' mother swore an oath to the old abbey that every scrap of their beeswax would go to its candles. Keeping the oath costs them the profit from selling wax to the town's candle-makers, and the wax has been piling up in their cellar since the abbey burned down forty years ago."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "The sisters’ mother swore an oath to the old abbey that every scrap of wax would go to its candles, and they keep it even though the abbey burned down forty years ago, storing the wax in their cellar where it piles up."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "The sisters' mother swore an oath to the old abbey that its candles would have every scrap of their wax, and they keep the oath even though the abbey burned down forty years ago, leaving the wax to pile up in their cellar."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "The sisters' mother swore an oath to the old abbey that every scrap of wax would go to its candles, and they keep it even though the abbey burned down forty years ago, storing the wax in their cellar."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "The sisters' mother swore an oath to the old abbey that every scrap of wax would go to its candles. Keeping the oath costs them the profit from selling the wax to the town's candle-makers, and the wax is now piling up in their cellar."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "The sisters' mother swore an oath to the burned-down abbey that every scrap of wax from their hives would go to its candles, a promise they still keep by piling the wax in their cellar."
+        }
+      ],
+      "failed": 0,
+      "total": 20,
+      "infra": "",
+      "at": 1792976941323
+    },
+    "world:untouched": {
+      "suite": "world",
+      "test": "untouched",
+      "label": "An untouched question",
+      "contract": "A question the conversation never touched comes back as none.",
+      "runs": [
+        {
+          "ok": false,
+          "why": "wrote an answer",
+          "text": "The town’s guild of candle-makers enforce their own trade rules, and the sisters’ refusal to sell wax is a breach of custom. The guild’s response is to harass the sisters, undercut their honey prices at the market, and spread rumors that their bees are sick."
+        },
+        {
+          "ok": false,
+          "why": "wrote an answer",
+          "text": "The candle-makers are the closest thing to law in the matter of the feud, and what they do is pressure the sisters. They spread rumors, undercut honey prices at the market, and tell the townsfolk the sisters are strange and selfish for hoarding the wax."
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "none"
+        },
+        {
+          "ok": false,
+          "why": "wrote an answer",
+          "text": "The town is watched by a constable elected from the market council, who settles disputes over weights, measures, and stall space. Thieves are put in the stocks for a day, and debts are settled by the seizure of goods from a stall. The law does not reach the hill where the sisters keep their bees."
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "none"
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "none"
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "none"
+        },
+        {
+          "ok": false,
+          "why": "wrote an answer",
+          "text": "The town's bailiff keeps order, and the candle-makers have taken to filing nuisance complaints against the sisters, hoping a fine will force them to sell the wax."
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "none"
+        },
+        {
+          "ok": false,
+          "why": "wrote an answer",
+          "text": "The market town is policed by a constable and two watchmen, who mostly settle market disputes and drunks. Breaking the law means a fine or a night in the cells, but the feud with the sisters exists outside the law and has no official resolution."
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "none"
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "none"
+        },
+        {
+          "ok": false,
+          "why": "wrote an answer",
+          "text": "The town constable is the only authority, and the feud is outside his power because no law is broken by the sisters keeping what is theirs."
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "none"
+        },
+        {
+          "ok": false,
+          "why": "wrote an answer",
+          "text": "The law of the market town is enforced by its constable, who settles disputes over prices and market stall rights. The feud with the sisters exists outside this law, as the candle-makers have no legal claim to the beeswax. Breaking the law means a fine or a night in the town's lockup, but the sisters' oath is a matter of conscience, not a crime."
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "none"
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "none"
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "none"
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "none"
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "none"
+        }
+      ],
+      "failed": 7,
+      "total": 20,
+      "infra": "",
+      "at": 1792977498436
+    }
+  }
+}

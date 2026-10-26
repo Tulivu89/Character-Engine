@@ -11,6 +11,7 @@
 | `guides/` | Standalone HTML guides (Context, States, Threads). |
 | `archive/` | Old full sources kept for reference. Git history has every version, so nothing new goes here. |
 | `tools/` | The packer and the load check. |
+| `bench-results/` | Exports from Settings > Bench, one per version measured, so a prompt change is judged against the counts before it. |
 | `README.md` | The user guide. |
 
 The bridge (`ce-bridge`, the userscript for image generation and the HUD) is published on Greasy Fork and is not in this repository.
