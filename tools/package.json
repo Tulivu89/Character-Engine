@@ -1,0 +1,15 @@
+{
+  "name": "character-engine-tools",
+  "private": true,
+  "description": "Builds the installable (packed) Character Engine from its full source, and checks the two match.",
+  "type": "module",
+  "scripts": {
+    "pack": "node pack.mjs",
+    "check": "node pack.mjs --check",
+    "load-test": "node load-test.mjs"
+  },
+  "devDependencies": {
+    "acorn": "8.12.1",
+    "esbuild": "0.25.12"
+  }
+}

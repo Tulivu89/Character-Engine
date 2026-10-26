@@ -3,6 +3,8 @@
 IMPORTANT: To utilize image generation for illustrations, you must install the bridge script via violentmonkey.github.io or Tampermonkey. Once you have either browser extension, install the bridge script below.
 https://greasyfork.org/en/scripts/587717-character-engine-bridge-hud
 
+To install the engine, import `character-engine.naiscript` from the top of this repository. The `src/` folder holds the full source, which is too large for NovelAI to load. See DEVELOPING.md.
+
 *Part 1: getting in, finding your way around, and how a character is put together.*
 
 ---

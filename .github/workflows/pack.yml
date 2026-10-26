@@ -1,0 +1,50 @@
+# Keeps character-engine.naiscript (the file NovelAI loads) built from
+# src/character-engine.naiscript (the file people edit).
+#
+# On any push that touches the source or the tools, this packs the source, checks that the
+# packed file loads, and commits the packed file if it changed. So an edit made on GitHub,
+# from a phone, still ends with an installable file on the same branch.
+name: Pack
+
+on:
+  push:
+    paths:
+      - 'src/character-engine.naiscript'
+      - 'tools/**'
+      - '.github/workflows/pack.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pack-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  pack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install the packer
+        working-directory: tools
+        run: npm ci --no-audit --no-fund
+      - name: Pack
+        run: node tools/pack.mjs
+      - name: Check that it loads
+        run: node tools/load-test.mjs
+      - name: Commit the packed file if it changed
+        run: |
+          if git diff --quiet -- character-engine.naiscript; then
+            echo "character-engine.naiscript is already up to date."
+            exit 0
+          fi
+          VER=$(sed -n 's/^version: *//p' src/character-engine.naiscript | head -1)
+          git config user.name "github-actions[bot]"
+          git config user.email "41898299+github-actions[bot]@users.noreply.github.com"
+          git add character-engine.naiscript
+          git commit -m "Pack character-engine.naiscript from src (v$VER)"
+          git push

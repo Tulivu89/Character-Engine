@@ -1,1 +1,6 @@
 *.naiscript linguist-language=JavaScript
+*.naiscript text eol=lf
+*.mjs text eol=lf
+# The packed release is built from src/ by tools/pack.mjs. Marked generated so pull requests
+# collapse its one-line diff and show the source change instead.
+/character-engine.naiscript linguist-generated=true
