@@ -4,9 +4,9 @@ id: ce000002-0000-0000-0000-000000000001
 name: Character Engine
 createdAt: 1776400000000
 updatedAt: 1793000000000
-version: 3.14.12
+version: 3.14.13
 author: AmbiProp
-description: Character Engine v3.14.12
+description: Character Engine v3.14.13
 memoryLimit: 128
 ---*/
 
@@ -21022,8 +21022,13 @@ async function generateSlotOptions(
     // opened from. Distinct from conceptDump (the record's own notes) and from includeStory
     // (the live prose): this is the author's brainstorming, and it arrives already carrying
     // wizFrameContext's source-of-truth sentence.
-    opts?: { temperature?: number; includeStory?: boolean; method?: 'direct' | 'yoink' | 'auto'; reference?: string }
+    opts?: { temperature?: number; includeStory?: boolean; method?: 'direct' | 'yoink' | 'auto'; reference?: string;
+             context?: string; kindNoun?: string }
 ): Promise<string[] | null> {
+    // [REC-CTX] What is being written, for the frame. "a character" was the frame for every kind.
+    const soNoun      = String((opts && opts.kindNoun) || 'character').trim() || 'character';
+    const soArticle   = /^[aeiou]/i.test(soNoun) ? 'an' : 'a';
+    const soNounCap   = soNoun.charAt(0).toUpperCase() + soNoun.substring(1);
     // [SLOT-COUNT] Floor lowered from 2 to 1. A single candidate is roughly a
     // third of the cost of three (see max_tokens below, which multiplies by wantCount),
     // and on a long character record that difference is the whole reason the author
@@ -21076,7 +21081,7 @@ async function generateSlotOptions(
     const steer = String(hint || '').trim();
     const sys = [
         generalStyle,
-        `You are writing the "${fieldLabel}" field for a character. This field has specific scope — stay inside it.`,
+        `You are writing the "${fieldLabel}" field for ${soArticle} ${soNoun}. This field has specific scope \u2014 stay inside it.`,
         instructions,
         steer
             ? `THE AUTHOR'S DIRECTION FOR THIS RUN — this outranks the field instructions above wherever the two disagree. If it asks for something they discourage, the author has overruled them on purpose and you follow the author:\n${steer}`
@@ -21105,8 +21110,9 @@ async function generateSlotOptions(
 
     const soContext = await buildFieldGenContext(char, fieldLabel);
     const usrParts: string[] = [
-        `Character: ${char.name}`,
+        `${soNounCap}: ${char.name}`,
         soContext    ? soContext : '',
+        (opts && opts.context && opts.context.trim()) ? opts.context.trim() : '',
         char.briefDescription ? `Anchor (do not contradict): ${char.briefDescription}` : '',
         char.conceptDump?.trim()
             ? `Reference notes (extract only what is directly relevant to the ${fieldLabel} field — ignore the rest):\n${char.conceptDump.trim()}`
@@ -34386,6 +34392,20 @@ async function ceSlotOptsRun(): Promise<void> {
             try { soRef = await buildWizardMultiContext(soSrc, cfg); }
             catch (eRef) { api.v1.error('[AE:gensrc] reference build failed \u2014 generating without it:', eRef); soRef = ''; }
         }
+        // [REC-CTX] The record's context and the right word for what it is (CE-PROMPT-AUDIT C8:
+        // the frame said "a character" for every kind).
+        var soCtx = '';
+        var soNoun = 'character';
+        try {
+            if (soScope === 'entity') {
+                soNoun = _ceKindNoun(String((c as any).kind || 'location'));
+                soCtx = await ceRecordContext({ kind: String((c as any).kind || 'location'), id: String(st.charId) });
+            } else if (soScope === 'char' || soScope === 'rel') {
+                soCtx = await ceRecordContext({ kind: 'character', id: String(st.charId) });
+            } else if (soScope === 'milestone') { soNoun = 'thread';
+            } else if (soScope === 'event') { soNoun = 'encounter';
+            } else if (soScope === 'sched') { soNoun = 'day in a schedule'; }
+        } catch (eSc) { api.v1.error('[AE:recctx] profile context failed \u2014 generating without it:', eSc); }
         var out: any = await generateSlotOptions(
             c, String(st.label || ''), String(st.instructions || ''),
             await _ceProfileStyle(cfg), _ceSlotOptsHint || '',
@@ -34408,7 +34428,8 @@ async function ceSlotOptsRun(): Promise<void> {
               // likeliest continuation is the failure mode rather than the goal.
               // [EVT-MIRROR] THE SAME LOOSE DRAW, FOR THE SAME REASON. An author who
               // already knew what was about to happen would have typed it.
-              temperature: (soScope === 'milestone' || soScope === 'event') ? 1.05 : undefined }
+              temperature: (soScope === 'milestone' || soScope === 'event') ? 1.05 : undefined,
+              context: soCtx, kindNoun: soNoun }
         );
         if (!out || !out.length) {
             ceSlotOptsPatch({ status: 'error', note: 'Came back empty \u2014 try again, or lower the count.' });
@@ -34877,15 +34898,22 @@ async function _ceThreadGenShim(threadId: string): Promise<any> {
 // for this one record, and the world's answered questions on top of that would be a second,
 // broader frame competing with the specific one. The Rules tier is different in kind -- it
 // is instructions to this writer, not facts about the world.
+// [REC-WORLD] AND THE WORLD, NOW. This used to keep the world's answered questions out, on the
+// argument that a broader frame competes with the record's own material. That held while the
+// only world was a canon block written for the narrator; the record writers' subset is the set
+// of constraints a Build seed already obeys, and a profile that does not see it writes a field
+// the seed would have been told not to. The Rules tier rides inside the span where a story
+// still has one; the global style stands in only where it does not.
 async function _ceProfileStyle(cfg: any): Promise<string> {
+    var rules = '';
     try {
         var ch: any = await loadCharter();
-        var rules = String((ch && ch.style) || '').trim();
-        if (rules) {
-            return 'WORLD RULES \u2014 this applies to everything in this world:\n' + rules;
-        }
+        rules = String((ch && ch.style) || '').trim();
     } catch (ePs) { api.v1.error('[AE:profile] charter style:', ePs); }
-    return String((cfg && cfg.generalStyle) || '').trim();
+    var span = '';
+    try { span = await ceWorldSpan('records'); } catch (ePw) { span = ''; }
+    var base = rules ? '' : String((cfg && cfg.generalStyle) || '').trim();
+    return [base, span].filter(function(s: string) { return !!s; }).join('\n\n');
 }
 
 async function _ceEntityGenShim(id: string, excludeField: string): Promise<any> {
@@ -34913,15 +34941,11 @@ async function _ceEntityGenShim(id: string, excludeField: string): Promise<any> 
     // SUBJECT. Identity lines only -- short by construction -- so generating a room can
     // see its tavern, its district and its city without paying for their full entries.
     // This is the whole reason nested generation beats generating places in isolation.
-    try {
-        var chain: string[] = await ceEntityAncestorLines(ent);
-        if (chain.length) add('Where this sits', chain.join(' '));
-    } catch (eA) { /* non-fatal — generation without the frame is worse, not broken */ }
-
+    // [REC-CTX] Where it sits, what is beside and inside it, and who holds it come from
+    // ceRecordContext at the dispatch; these notes are the record's own fields.
     if (excludeField !== 'description')   add('Description', ent.description);
     if (excludeField !== 'lorebookText')  add('Lorebook entry', ent.lorebookText);
     add('Visual tags', ent.locationVisuals);
-    if (where) add('Located inside', where);
     // [LOC-PROFILE] Every WRITTEN facet except the one being generated. Excluding
     // the target is the same rule the two record fields above already follow: hand a
     // regenerate its own previous answer as reference and it converges on it.
@@ -34937,10 +34961,6 @@ async function _ceEntityGenShim(id: string, excludeField: string): Promise<any> 
     // [LOC-PROFILE5] The owner by NAME, resolved from the index and config
     // the shim already loaded. The Control generator is the obvious consumer, but every
     // field benefits: who holds a place changes what it offers and what it costs.
-    try {
-        var ownBrief = await ceOwnerContext(ent, cfgG);
-        if (ownBrief) add('Held by', ownBrief);
-    } catch (eO) { /* non-fatal — a generation without the owner is worse, not broken */ }
     // [ADVENTURE-RELIC] `atmosphere` IS NO LONGER FED TO THE GENERATOR. It is the
     // remains of the state-switching mechanism, not authored lore, and feeding a relic
     // into every generation taught the model to write more of it.
@@ -34949,6 +34969,7 @@ async function _ceEntityGenShim(id: string, excludeField: string): Promise<any> 
 
     return {
         id: String(ent.id || id),
+        kind: String(ent.type || 'location'),
         name: String(ent.name || 'Unnamed'),
         briefDescription: 'A ' + kindWord + (where ? (' in ' + where) : '') + '.',
         // [LOC-PROFILE4] THE AUTHOR'S OWN NOTES GO FIRST, ahead of the derived
@@ -47813,6 +47834,7 @@ async function ceEntsMoveMany(ids: string[], dest: string): Promise<void> {
     }
     _ceEntsPickSet(false);
     try { await cePublishMap(); } catch (eP) {}
+    if (ceBuildStore) { try { await cePublishBuild(); } catch (eB) {} }   // [BUILD-LIST]
     try { api.v1.ui.toast('Moved ' + moved + '.', { type: 'info', autoClose: 2000 }); } catch (eT) {}
 }
 
@@ -47851,6 +47873,7 @@ async function ceEntsDeleteMany(ids: string[], deep: boolean): Promise<void> {
     }
     _ceEntsPickSet(false);
     try { await cePublishMap(); } catch (eP) {}
+    if (ceBuildStore) { try { await cePublishBuild(); } catch (eB) {} }   // [BUILD-LIST]
     if (anyChar) { try { await cePublishScene(); } catch (eS) {} }
     try { api.v1.ui.toast('Deleted ' + gone + '.', { type: 'info', autoClose: 2000 }); } catch (eT) {}
 }
@@ -67593,7 +67616,9 @@ var CE_P_SEED_RELAPSE =
 // every World answer, every charter write and every import -- three writers, one of which is
 // the import path that already exists to change everything at once. A stale world in every
 // prompt in the engine is a far worse failure than a read.
-async function ceWorldSpan(): Promise<string> {
+// [REC-WORLD] `forWhat` 'records' gives the record writers the facts that constrain a record
+// and leaves out the ones written for the narrator (CE_WORLD_RECORD_SKIP).
+async function ceWorldSpan(forWhat?: string): Promise<string> {
     try {
         var c = await loadCharter();
         var qs: any[] = [];
@@ -67611,20 +67636,38 @@ async function ceWorldSpan(): Promise<string> {
         // THE RULES TIER IS READ WHERE A STORY STILL HAS ONE [RULES-RETIRED]. Its prompt said it
         // was "stamped onto EVERY generation the tool makes", which is this span exactly.
         // Nothing writes it now; the world's facts are the answered questions below it.
-        return ceWorldSpanFrom(String((c && c.style) || ''), qs);
+        return ceWorldSpanFrom(String((c && c.style) || ''), qs, String(forWhat || '') === 'records');
     } catch (eWs) { api.v1.error('[AE:head] world span failed:', eWs); return ''; }
 }
 
 // [BENCH-INPUTS] THE SPAN OVER INPUTS THE CALLER SUPPLIES: the Rules tier, then the answered
 // questions, in that order. ceWorldSpan reads both from storage and builds through here, so the
 // bench and a live story are handed the same bytes by one assembler.
-function ceWorldSpanFrom(style: string, qs: any[]): string {
+// [REC-WORLD] THE QUESTIONS A RECORD WRITER IS NOT GIVEN. Themes, stakes, intimacy and danger
+// are written for the narrator: they say what the story keeps returning to and how it treats
+// closeness and harm. Handed to the writer of one tavern's lines they make every tavern
+// express the theme. Premise, Setting, Conflict, World Rules, Names, Off limits and every
+// question the author added are constraints on what a record may be, and they stay. A
+// judgment, not a measurement: one bench pair (a place seeded with and without themes)
+// settles it.
+var CE_WORLD_RECORD_SKIP: string[] = ['wsec_themes', 'wsec_stakes', 'wsec_intimacy', 'wsec_danger'];
+function ceWorldSpanFrom(style: string, qs: any[], forRecords?: boolean): string {
     var parts: string[] = [];
     var st = String(style || '').trim();
     if (st) {
         parts.push('WORLD RULES \u2014 this applies to everything in this world:\n' + st);
     }
-    var wb = ceOpeningWorldBlockFrom(qs);
+    var use: any[] = [];
+    for (var ui = 0; ui < (qs || []).length; ui++) {
+        var uq: any = qs[ui];
+        if (!uq) continue;
+        // A SWITCHED-OFF QUESTION IS OUT OF THE WORLD. Memory has always skipped it; the span
+        // did not, so text left in a question the author turned off still rode every head.
+        if (uq.enabled === false) continue;
+        if (forRecords && CE_WORLD_RECORD_SKIP.indexOf(String(uq.id || '')) >= 0) continue;
+        use.push(uq);
+    }
+    var wb = ceOpeningWorldBlockFrom(use);
     if (String(wb || '').trim()) parts.push(String(wb).trim());
     return parts.join('\n\n');
 }
@@ -67636,7 +67679,7 @@ function ceWorldSpanFrom(style: string, qs: any[]): string {
 // down, and the answer is the same: one site.
 async function ceSysHead(opts: any): Promise<string> {
     var o: any = opts || {};
-    var w = await ceWorldSpan();
+    var w = await ceWorldSpan(String(o.worldFor || ''));   // [REC-WORLD]
     return ceBuildHead({ family: o.family, records: !!o.records, naming: !!o.naming,
                          world: w });
 }
@@ -69104,7 +69147,8 @@ function ceBuildStoreInit(): void {
                                     pending: false, chatBlock: '', seedDefs: [],
                                     chatKey: '', chatLabel: '', scopeShape: 'builder',
                                     kdef: null, listAt: '', listDefs: [], cfg: null,
-                                    chatAddr: '', setupRows: [], premiseTurns: 0 });
+                                    chatAddr: '', setupRows: [], premiseTurns: 0,
+                                    entList: [] });
     } catch (e) { api.v1.error('[AE:build] store init failed:', e); }
 }
 
@@ -69203,6 +69247,7 @@ async function cePublishBuild(): Promise<void> {
         // Loaded ONLY for a kind stage, on the same rule as the transcript and the queue: a
         // publish that read it for Premise would pay for a screen that has no fields on it.
         var pubCfg: any = null;
+        var entList: any[] = [];   // [BUILD-LIST] the world, for Select's Move targets
         if (kdef) {
             // A FLAT KIND IS ALWAYS AT THE TOP. It has no depth to be at, so the pointer is
             // never read and never minted -- rather than read and always ''.
@@ -69308,6 +69353,43 @@ async function cePublishBuild(): Promise<void> {
                 done.push({ id: String(m.id), name: String(m.name || 'Unnamed'),
                             kept: keptBy[String(m.id)] || null });
             }
+            // [BUILD-LIST] WHAT A COMMITTED ROW SHOWS, the Entities tab's facts and one line more:
+            // icon, kind, where it sits or how much is inside, and the first line of what it is.
+            // The description is read for the first CE_BUILD_LIST_READ rows only; past that
+            // the row shows its facts and no line, rather than a publish that grows with the world.
+            entList = _ceEntListBuild(idx);
+            var entBy: any = {};
+            for (var eb = 0; eb < entList.length; eb++) entBy[String(entList[eb].id)] = entList[eb];
+            // Counted here from the index rather than read off the meta: a meta's childCount
+            // is set when that record is saved, so a parent saved before its children reads 0.
+            var kidsOf: any = {};
+            for (var kc = 0; kc < idx.length; kc++) {
+                var kp = String((idx[kc] && idx[kc].parentId) || '');
+                if (kp) kidsOf[kp] = (kidsOf[kp] || 0) + 1;
+            }
+            var briefBy: any = {};
+            if (String(kdef.kind) === 'character') {
+                try {
+                    var bIdx: any[] = await loadIndex();
+                    for (var bi2 = 0; bi2 < bIdx.length; bi2++) {
+                        if (bIdx[bi2] && bIdx[bi2].id) briefBy[String(bIdx[bi2].id)] = String(bIdx[bi2].briefDescription || '');
+                    }
+                } catch (eBi) { briefBy = {}; }
+            }
+            for (var dd = 0; dd < done.length; dd++) {
+                var dm: any = entBy[String(done[dd].id)] || {};
+                done[dd].type = String(kdef.kind);
+                done[dd].icon = String(dm.icon || '');
+                done[dd].parentName = String(dm.parentName || '');
+                done[dd].childCount = Number(kidsOf[String(done[dd].id)]) || 0;
+                var dl = '';
+                if (String(kdef.kind) === 'character') { dl = String(briefBy[String(done[dd].id)] || ''); }
+                else if (dd < CE_BUILD_LIST_READ) {
+                    try { var dEnt: any = await loadEntity(String(done[dd].id)); dl = String((dEnt && dEnt.description) || ''); }
+                    catch (eDl) { dl = ''; }
+                }
+                done[dd].line = _ceDigestCut(dl, 140);
+            }
             // [REC-CHAT-DERIVED] The pointer is VALIDATED against the list rather than
             // stored durably: stepping into a place leaves a chatKey naming a row of the
             // scope above, and a dock showing a conversation the surface has no row for is
@@ -69382,7 +69464,7 @@ async function cePublishBuild(): Promise<void> {
         catch (eWb) { api.v1.error('[AE:build] world block:', eWb); worldBlk = CE_P_WORLD; }
         ceBuildStore.set(function(prev: any) {
             return { ready: true, stage: stg, charter: c, sections: secs, rows: qrows,
-                     setupRows: setupRows, premiseTurns: premiseTurns,
+                     setupRows: setupRows, premiseTurns: premiseTurns, entList: entList,
                      done: done, trail: trail, scopeAt: atId, rungHere: rungHere,
                      chatBlock: chatBlk, seedDefs: seedDefs,
                      // [WORLD-QLIST] [SCOPE-CHAT-STABLE] PUBLISHED, NOT BUILT IN THE
@@ -70383,11 +70465,48 @@ function _ceScopeRow(d: any, idx: number, rungLabel: string, defs: any[], openMa
 // READ-ONLY, because the record's fields are the live copy now and an editable second copy
 // of an answer is the parallel structure SEED-IS-VALUE deleted. This is a receipt: what the
 // pass wrote, still legible after generation has written over it on the record.
+var CE_BUILD_LIST_READ = 120;
+var CE_BUILD_LIST_PAGE = 40;
+var _ceBuildListWin: any = {};
+
+// [BUILD-LIST] The row's head: icon, name, and the Entities row's facts, plus its first line.
+function _ceBuildRecHead(rec: any, acts: any): any {
+    var bits: string[] = [_ceEntsNoun(String(rec.type || ''))];
+    if (rec.parentName) bits.push('in ' + String(rec.parentName));
+    if (Number(rec.childCount) > 0) bits.push(String(rec.childCount) + ' inside');
+    var svg = ceIconSvg(rec.icon, 16, 'bic_' + String(rec.id));
+    var glyph = (!svg && !ceIconIsSvg(rec.icon) && String(rec.icon || '')) ? (String(rec.icon) + ' ') : '';
+    return h('div', { key: 'brh', style: { display: 'flex', alignItems: 'center', gap: CE_T.s2,
+                                             minHeight: CE_T.tap } }, [
+        svg ? h('div', { key: 'bri', style: { flex: '0 0 auto', display: 'flex' } }, svg) : null,
+        h('div', { key: 'brt', style: { flex: '1 1 auto', minWidth: '0', display: 'flex',
+                                         flexDirection: 'column', gap: '2px' } }, [
+            h('div', { key: 'brn', style: { fontSize: CE_T.fs } }, glyph + String(rec.name || 'Unnamed')),
+            h('div', { key: 'brs', style: { fontSize: CE_T.fsSm, opacity: CE_OP.t2 } }, bits.join('  \u00b7  ')),
+            String(rec.line || '') ? ceTruncate('t3', String(rec.line)) : null
+        ]),
+        acts ? h('div', { key: 'bra', style: { flex: '0 0 auto' } }, acts) : null
+    ]);
+}
+
 function _ceScopeDoneRow(rec: any, defs: any[], openMap: any, kdef: any): any {
     var rid = String(rec.id);
     var kKind = String((kdef && kdef.kind) || 'location');
     var kRec = !!(kdef && kdef.recursive);
     var kept: any = rec.kept || null;
+    // [BUILD-LIST] In Select, a tap selects; the actions step aside, as on the Entities tab.
+    if (_ceEntsPick) {
+        var on = !!_ceEntsSel[rid];
+        return ceWrap({ key: 'scd:' + rid }, [h('div', {
+            role: 'button', tabIndex: 0,
+            onClick: function() { ceTap('build:sel:' + rid, function() {
+                if (_ceEntsSel[rid]) { delete _ceEntsSel[rid]; } else { _ceEntsSel[rid] = 1; }
+                _ceEntsAsk = false;
+                ceUiPatch(function() { return {}; });
+            }); },
+            style: { cursor: 'pointer', borderBottom: '1px solid ' + CE_LINE }
+        }, _ceBuildRecHead(rec, ceSub('t3', on ? '\u2713 Selected' : '')))]);
+    }
     var acts = ceInline({ gap: CE_T.s1 }, [
         // [REC-DOOR] THE RECORD'S OWN PAGE, WHICH FOR A CHARACTER IS THE PROFILE. This was
         // ceNav('entity', ...) for every kind and could not be caught before [DONE-PARENT],
@@ -70414,11 +70533,11 @@ function _ceScopeDoneRow(rec: any, defs: any[], openMap: any, kdef: any): any {
         }
     }
     if (!lines.length) {
-        return ceWrap({ key: 'scd:' + rid }, [ceRow(String(rec.name || 'Unnamed'), null, acts)]);
+        return ceWrap({ key: 'scd:' + rid }, [_ceBuildRecHead(rec, acts)]);
     }
     var kid = 'donerow:' + rid;
     return ceWrap({ key: 'scd:' + rid }, [ceStack(CE_T.s2, [
-        ceRow(String(rec.name || 'Unnamed'), null, acts),
+        _ceBuildRecHead(rec, acts),
         ceExpandRow({ id: kid, key: 'dx:' + rid, label: 'Seeds it was built from',
             open: !!(openMap && openMap[kid]), solo: 'donerow:',
             meta: String(lines.length),
@@ -70928,9 +71047,28 @@ function _ceBuildScope(st: any, openMap: any): any {
     var setDq = function(v: string) { ceFilterSet(doneAddr, String(v || '')); };
     var doneNeedle = ceFilterNeedle(dq);
     var doneKids: any[] = [];
+    // [BUILD-LIST] Matched on everything the row shows, as the Entities search is.
+    var doneHits: any[] = [];
     for (i = 0; i < done.length; i++) {
-        if (doneNeedle && !ceFilterMatch(doneNeedle, [String(done[i].name || '')])) continue;
-        doneKids.push(_ceScopeDoneRow(done[i], seedDefs, openMap, kdef));
+        if (doneNeedle && !ceFilterMatch(doneNeedle, [String(done[i].name || ''),
+                _ceEntsNoun(String(done[i].type || '')), String(done[i].parentName || ''),
+                String(done[i].line || '')])) continue;
+        doneHits.push(done[i]);
+    }
+    var winKey = kKind + '|' + doneNeedle;
+    if (!_ceBuildListWin[winKey]) _ceBuildListWin[winKey] = CE_BUILD_LIST_PAGE;
+    var doneWin = Math.min(doneHits.length, Number(_ceBuildListWin[winKey]) || CE_BUILD_LIST_PAGE);
+    for (i = 0; i < doneWin; i++) {
+        doneKids.push(_ceScopeDoneRow(doneHits[i], seedDefs, openMap, kdef));
+    }
+    var doneHidden = doneHits.length - doneWin;
+    var doneRowsForPick: any[] = [];
+    for (i = 0; i < doneWin; i++) doneRowsForPick.push({ e: doneHits[i] });
+    var doneChosen: string[] = [];
+    if (_ceEntsPick) {
+        for (i = 0; i < done.length; i++) {
+            if (_ceEntsSel[String(done[i].id)]) doneChosen.push(String(done[i].id));
+        }
     }
 
     var head = hasLists ? _ceListBar(kKind, listDefs, listAt)
@@ -71233,17 +71371,30 @@ function _ceBuildScope(st: any, openMap: any): any {
               // THE COUNT IS WHAT IS SHOWING, and the whole is stated beside it while a
               // filter is live. A band header that keeps saying 40 above six rows is the
               // surface disagreeing with itself.
-              count: doneNeedle ? (String(doneKids.length) + '/' + String(done.length))
+              count: doneNeedle ? (String(doneHits.length) + '/' + String(done.length))
                                 : String(done.length) },
             ceStack(CE_T.s2, [
+                // [BUILD-LIST] Select, Move and Delete are the Entities tab's own, over the
+                // same selection; the move targets are the whole world, not this list.
+                _ceEntsPick
+                    ? _ceEntsPickBar(st.entList || [], doneRowsForPick, doneWin, doneChosen)
+                    : ceInline({ gap: CE_T.s2, key: 'done_tools' }, [
+                        ceBtn('Select', 'build:done:pick', function() { _ceEntsPickSet(true); return Promise.resolve(); })
+                    ]),
                 (done.length >= CE_PICK_SEARCH_MIN)
                     ? ceWrap({ key: 'done_flt' }, [
                         ceFilterField('builddone:' + kKind,
                                       'Search every ' + kNoun + '\u2026', setDq, dq) ])
                     : null,
                 doneKids.length
-                    ? ceStack(CE_T.s2, doneKids)
-                    : ceEmpty('Nothing by that name.', null)
+                    ? ceStack(null, doneKids)
+                    : ceEmpty('Nothing by that name.', null),
+                doneHidden ? ceBtn('Show ' + String(Math.min(CE_BUILD_LIST_PAGE, doneHidden))
+                        + ' more (' + String(doneHidden) + ' not shown)', 'build:done:more', function() {
+                    _ceBuildListWin[winKey] = (Number(_ceBuildListWin[winKey]) || CE_BUILD_LIST_PAGE) + CE_BUILD_LIST_PAGE;
+                    ceUiPatch(function() { return {}; });
+                    return Promise.resolve();
+                }) : null
             ])) : null
     ]);
 
@@ -74584,7 +74735,7 @@ async function ceNameMessages(rung: any, parentName: string, belowLabel: string,
     // [P-WORLD-SPAN] THE NAME PASS NOW KNOWS THE WORLD IT IS NAMING INTO, which it never did:
     // it received the style line and nothing else, so a name was drawn from a noun, a pool
     // and a scale. Free here -- it shares the span with the other three channels.
-    var sys = await ceSysHead({ family: 'machine', records: true, naming: true });
+    var sys = await ceSysHead({ family: 'machine', records: true, naming: true, worldFor: 'records' });
     var lad: any[] = Array.isArray(ladder) ? ladder : ceKindLadder(kdM, c);
     var lb = (rung && lad.length)
         ? ceLadderBlock(lad, rung, parentName, belowLabel)
@@ -74826,10 +74977,133 @@ async function ceDigestAncestors(atId: string, kind?: string): Promise<string> {
 // only asks for something better than distance and this already is: a place the author made
 // first is the one they think about the world through.
 var CE_DIGEST_SIB_CAP = 6;
+
+// [REC-CTX] ONE CONTEXT FOR EVERY PASS THAT WRITES A RECORD. The Build seed and the profile's
+// Generate wrote the same record from two different pictures of the world: the seed saw every
+// ancestor's description and six neighbours, the profile saw ancestor names only, and neither
+// told a character where it lived or what it belonged to. Both now read this, so a record gets
+// the same context whichever door it is written through. In order:
+//   where it sits   ancestors with their description [DIGEST-ANCESTOR]; for a character, its
+//                   home, then the home's ancestors
+//   what it is in   a character's species and group, an owned thing's holder
+//   beside it       up to six of the same kind at the same place [DIGEST-SIBLING]
+//   inside it       names only, of what is already recorded in it, and a group's members
+// The world itself rides the head (ceWorldSpan 'records'), and the record's own fields ride
+// the caller's ask, so neither is here.
+// `id` is the record when it exists; a Build row passes `parentId` instead and no id.
+var CE_REC_INSIDE_CAP = 12;
+async function ceRecordContext(o: any): Promise<string> {
+    var kd = String((o && o.kind) || 'location');
+    var id = String((o && o.id) || '');
+    var parts: string[] = [];
+    try {
+        var eIdx: any[] = await loadEntityIndex();
+        var byId: any = {};
+        for (var i = 0; i < (eIdx || []).length; i++) {
+            if (eIdx[i] && eIdx[i].id) byId[String(eIdx[i].id)] = eIdx[i];
+        }
+        var cfg: any = null;
+        try { cfg = await loadConfig(); } catch (eCf) { cfg = null; }
+        if (kd === 'character') {
+            var cIdx: any[] = await loadIndex();
+            var me: any = null;
+            for (i = 0; i < cIdx.length; i++) {
+                if (cIdx[i] && id && String(cIdx[i].id) === id) { me = cIdx[i]; break; }
+            }
+            var links: string[] = [];
+            var home = me ? String(me.homeLocationId || me.currentLocationId || '') : '';
+            if (home && byId[home]) {
+                var hEnt: any = await loadEntity(home);
+                var hLine = _ceDigestCut(String((hEnt && hEnt.description) || ''), 160);
+                links.push('Lives in: ' + String(byId[home].name || 'Unnamed')
+                           + (hLine ? (' \u2014 ' + hLine) : ''));
+            }
+            var spName = me ? String(me.species || '').trim() : '';
+            if (spName) {
+                var spLine = '';
+                for (i = 0; i < eIdx.length; i++) {
+                    var sm: any = eIdx[i];
+                    if (!sm || String(sm.type) !== 'species') continue;
+                    if (String(sm.name || '').trim().toLowerCase() !== spName.toLowerCase()) continue;
+                    var sEnt: any = await loadEntity(String(sm.id));
+                    spLine = _ceDigestCut(String((sEnt && sEnt.description) || ''), 160);
+                    break;
+                }
+                links.push('Species: ' + spName + (spLine ? (' \u2014 ' + spLine) : ''));
+            }
+            var fid = me ? String(me.factionId || '') : '';
+            if (fid && byId[fid]) {
+                var fEnt: any = await loadEntity(fid);
+                var fLine = _ceDigestCut(String((fEnt && fEnt.description) || ''), 160);
+                links.push('Belongs to: ' + String(byId[fid].name || 'Unnamed')
+                           + (fLine ? (' \u2014 ' + fLine) : ''));
+            }
+            if (links.length) {
+                parts.push('WHERE THEY LIVE AND WHAT THEY BELONG TO \u2014 established, do not '
+                           + 'contradict:\n' + links.join('\n'));
+            }
+            // Then what the home sits inside, so a place they live in is read in its setting.
+            if (home && byId[home] && byId[home].parentId) {
+                var hAnc = await ceDigestAncestors(String(byId[home].parentId), 'location');
+                if (hAnc) parts.push(hAnc);
+            }
+            var cSib = await ceDigestSiblings('', '', 'character', id);
+            if (cSib) parts.push(cSib);
+        } else {
+            var rec: any = id ? await loadEntity(id) : null;
+            var pid = (o && o.parentId !== undefined && o.parentId !== null)
+                ? String(o.parentId || '') : String((rec && rec.parentId) || '');
+            if (pid) {
+                var pKind = String((byId[pid] && byId[pid].type) || 'location');
+                var anc = await ceDigestAncestors(pid, pKind);
+                if (anc) parts.push(anc);
+            }
+            if (rec && rec.ownerId) {
+                var own = await ceOwnerContext(rec, cfg);
+                if (own) parts.push('HELD BY \u2014 established, do not contradict:\n' + own);
+            }
+            var pName = (pid && byId[pid]) ? String(byId[pid].name || '') : '';
+            var sib = await ceDigestSiblings(pid, pName, kd, id);
+            if (sib) parts.push(sib);
+            if (id) {
+                var inside: string[] = [];
+                var more = 0;
+                for (i = 0; i < eIdx.length; i++) {
+                    var km: any = eIdx[i];
+                    if (!km || String(km.parentId || '') !== id) continue;
+                    if (inside.length >= CE_REC_INSIDE_CAP) { more++; continue; }
+                    inside.push(String(km.name || 'Unnamed') + ' (' + _ceKindNoun(String(km.type || '')) + ')');
+                }
+                if (inside.length) {
+                    parts.push('ALREADY RECORDED INSIDE IT: ' + inside.join(', ')
+                               + (more ? (', and ' + String(more) + ' more') : '') + '.');
+                }
+                if (kd === 'faction') {
+                    var mIdx: any[] = await loadIndex();
+                    var mem: string[] = [];
+                    var mMore = 0;
+                    for (i = 0; i < mIdx.length; i++) {
+                        if (!mIdx[i] || String(mIdx[i].factionId || '') !== id) continue;
+                        if (mem.length >= CE_REC_INSIDE_CAP) { mMore++; continue; }
+                        mem.push(String(mIdx[i].name || 'Unnamed'));
+                    }
+                    if (mem.length) {
+                        parts.push('ITS MEMBERS: ' + mem.join(', ')
+                                   + (mMore ? (', and ' + String(mMore) + ' more') : '') + '.');
+                    }
+                }
+            }
+        }
+    } catch (eRc) { api.v1.error('[AE:recctx] context failed:', eRc); }
+    return parts.join('\n\n');
+}
+// [REC-CTX] `excludeId` keeps a record out of its own list, which a profile Generate needs and
+// a Build seed (whose record does not exist yet) does not.
 async function ceDigestSiblings(atId: string, parentName: string,
-                                kind?: string): Promise<string> {
+                                kind?: string, excludeId?: string): Promise<string> {
     var lines: string[] = [];
     var kdD = String(kind || 'location');
+    var exD = String(excludeId || '');
     try {
         // [KIND-NOUN] A CHARACTER'S SIBLINGS ARE NOT IN THE ENTITY INDEX, and the cast seed
         // was getting no neighbour context at all because of it. A character's body entity IS
@@ -74841,15 +75115,36 @@ async function ceDigestSiblings(atId: string, parentName: string,
         // which is exactly the one-line read this digest wants, so this costs no record load
         // at all -- it is cheaper than the entity path it replaces.
         if (kdD === 'character') {
+            // [REC-CTX] PEOPLE WHO SHARE SOMETHING WITH THIS ONE, THEN THE MOST RECENT. It was
+            // the first six in the index, whoever they were. A character's peers are the ones
+            // living in the same place or belonging to the same group; with neither known (a
+            // Build row), the most recently made are the ones this batch should fit beside.
             var cIdx: any[] = await loadIndex();
-            var cPick = 0;
-            for (var ci = 0; ci < cIdx.length && cPick < CE_DIGEST_SIB_CAP; ci++) {
-                var cm: any = cIdx[ci];
-                if (!cm) continue;
-                var cHead = _ceDigestCut(String(cm.briefDescription || ''), 110);
+            var meC: any = null;
+            for (var mi = 0; mi < cIdx.length; mi++) {
+                if (cIdx[mi] && exD && String(cIdx[mi].id) === exD) { meC = cIdx[mi]; break; }
+            }
+            var homeC = meC ? String(meC.homeLocationId || meC.currentLocationId || '') : '';
+            var facC = meC ? String(meC.factionId || '') : '';
+            var order: any[] = [];
+            var taken: any = {};
+            var pass = function(test: (m: any) => boolean): void {
+                for (var ci = cIdx.length - 1; ci >= 0; ci--) {
+                    var cm: any = cIdx[ci];
+                    if (!cm || !cm.id || taken[String(cm.id)] || String(cm.id) === exD) continue;
+                    if (!test(cm)) continue;
+                    taken[String(cm.id)] = 1;
+                    order.push(cm);
+                }
+            };
+            if (homeC) pass(function(m: any) {
+                return String(m.homeLocationId || m.currentLocationId || '') === homeC; });
+            if (facC) pass(function(m: any) { return String(m.factionId || '') === facC; });
+            pass(function() { return true; });
+            for (var oi = 0; oi < order.length && lines.length < CE_DIGEST_SIB_CAP; oi++) {
+                var cHead = _ceDigestCut(String(order[oi].briefDescription || ''), 110);
                 if (!cHead) continue;
-                lines.push(String(cm.name || 'Unnamed') + ' \u2014 ' + cHead);
-                cPick++;
+                lines.push(String(order[oi].name || 'Unnamed') + ' \u2014 ' + cHead);
             }
         } else {
         var idx = await loadEntityIndex();
@@ -74858,6 +75153,7 @@ async function ceDigestSiblings(atId: string, parentName: string,
             var m: any = idx[i];
             if (!m || String(m.type) !== kdD) continue;
             if (String(m.parentId || '') !== String(atId || '')) continue;
+            if (exD && String(m.id) === exD) continue;
             var e: any = await loadEntity(String(m.id));
             if (!e) continue;
             var head = _ceDigestCut(String(e.description || ''), 110);
@@ -75467,7 +75763,7 @@ async function ceSeedMessages(ladder: any[], rung: any, parentName: string, belo
     // ceOpeningWorldBlock IS REUSED RATHER THAN COPIED: it already emits only the ANSWERED
     // questions, which is the same filter this wants, and a second assembler would be a
     // second view of what the story has settled.
-    var sys = await ceSysHead({ family: 'machine', records: true });
+    var sys = await ceSysHead({ family: 'machine', records: true, worldFor: 'records' });
     sys += '\n\n' + ceLadderBlock(ladder, rung, parentName, belowLabel, String(kind || ''));
     // [CHAR-IDENT-SPECIES] CHARACTERS ONLY, and above the doctrine because it is world
     // material rather than an instruction about how to write. A species record seeding
@@ -75793,13 +76089,13 @@ async function _ceSeedContext(parentId: string, rungId: string, kind?: string,
         }
         defs = narrowed;
     }
-    var anc = await ceDigestAncestors(String(parentId || ''), kd);
-    var sib = await ceDigestSiblings(String(parentId || ''), parentName, kd);
+    // [REC-CTX] The same context a profile Generate on the finished record reads.
+    var recCtx = await ceRecordContext({ kind: kd, parentId: String(parentId || '') });
     // [SEED-CLASSIC] A CLASSIC ENTITY IS THE ONLY SHAPE WITH NO QUESTIONS AND A BODY.
     // Not a character's classic, which is a real question set (SEED-DEFS-CHAR) -- one word,
     // two meanings, and this is the one place both are in scope at once.
     var isClassic = (kShape === 'classic' && kd !== 'character');
-    var genBase = await ceSeedMessages(ladder, rung, parentName, belowLabel, defs, anc, sib,
+    var genBase = await ceSeedMessages(ladder, rung, parentName, belowLabel, defs, recCtx, '',
                                        kd, isClassic);
 
     // [SEED-ROUTE] The conversation, if there is one, and the flat text used to decide which
