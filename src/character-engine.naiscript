@@ -4,9 +4,9 @@ id: ce000002-0000-0000-0000-000000000001
 name: Character Engine
 createdAt: 1776400000000
 updatedAt: 1793000000000
-version: 3.14.11
+version: 3.14.12
 author: AmbiProp
-description: Character Engine v3.14.11
+description: Character Engine v3.14.12
 memoryLimit: 128
 ---*/
 
@@ -1940,6 +1940,8 @@ interface WizardMemorySection {
     // before this existed has sections without it -- ceWorldHelper falls back to the default
     // table by id rather than migrating them.
     helper?: string;
+    // [WORLD-NONE-AT] The transcript's length when this question last came back blank.
+    noneAt?: number;
 }
 
 // ── World-Build Wizard: Chats + Topics ───────────────────────────────────────
@@ -2751,18 +2753,30 @@ var DEFAULT_WIZARD_SECTIONS: WizardMemorySection[] = [
     { id: 'wsec_conflict', label: 'Central Conflict', enabled: true, content: '', target: 'memory',
       helper: 'The forces pulling against each other and what is contested between them. The shape of the pressure \u2014 never how it resolves.',
       instructions: 'Describe the opposing forces and what is contested between them \u2014 the shape of the pressure, not its resolution and not the individual beats.' },
-    { id: 'wsec_worldrules', label: 'World Rules', enabled: false, content: '', target: 'memory',
+    { id: 'wsec_worldrules', label: 'World Rules', enabled: true, content: '', target: 'memory',
       helper: 'Only if this world departs from the ordinary. What the powers, technology or social order make possible, and what they cost. Rules, not examples.',
       instructions: 'Describe how this world works where it departs from the ordinary: the powers, technologies, or social orders in play, what they make possible, and what they cost. Rules, not instances.' },
-    { id: 'wsec_intimacy', label: 'Intimacy and Consequences', enabled: false, content: '', target: 'memory',
+    { id: 'wsec_intimacy', label: 'Intimacy and Consequences', enabled: true, content: '', target: 'memory',
       helper: 'Only if closeness is part of this story. How attraction and intimacy work here and what follows from them. Left out, the narrator will not reach for it.',
       instructions: 'Describe how attraction, desire, and intimacy operate in this world and what tends to follow from them \u2014 the tone and the stakes of closeness, not a specific pairing.' },
-    { id: 'wsec_danger', label: 'Danger and Consequences', enabled: false, content: '', target: 'memory',
+    { id: 'wsec_danger', label: 'Danger and Consequences', enabled: true, content: '', target: 'memory',
       helper: 'Only if harm is part of this story. How lethal, how lasting, and how the story treats the aftermath. Left out, the narrator will not reach for it.',
       instructions: 'Describe how harm, violence, and danger operate in this world and what their aftermath looks like \u2014 how lethal, how lasting, how the narrative treats it. Not a specific confrontation.' },
-    { id: 'wsec_stakes', label: 'Stakes', enabled: false, content: '', target: 'memory',
+    { id: 'wsec_stakes', label: 'Stakes', enabled: true, content: '', target: 'memory',
       helper: 'The largest thing that can be won or lost. Skip it when the stakes are personal and the conflict already carries them.',
-      instructions: 'Describe what can be won or lost at the largest scale this story reaches \u2014 the weight on the scales, not the mechanics or the plot beats.' }
+      instructions: 'Describe what can be won or lost at the largest scale this story reaches \u2014 the weight on the scales, not the mechanics or the plot beats.' },
+    // [EXTRACT-SAID] EVERY DEFAULT IS ASKED. Four shipped switched off because the old
+    // extraction invented an answer for a question the conversation never touched; it now
+    // leaves that question blank, so asking costs a call and nothing else.
+    // [RULES-RETIRED] The two lines of the old Rules tier that no question held. Names is
+    // last-but-one and optional by its own wording: it is answered only if the author talked
+    // about names, and it is not a reason to.
+    { id: 'wsec_names', label: 'Names', enabled: true, content: '', target: 'memory',
+      helper: 'How names sound here, for people, places and groups, with a few you like. Only if you want to set it.',
+      instructions: 'How names are built and how they sound in this world \u2014 for people, for places, for groups \u2014 with the examples the author gave or approved. Only what the author said about names.' },
+    { id: 'wsec_offlimits', label: 'Off limits', enabled: true, content: '', target: 'memory',
+      helper: 'What must never appear in this story. Leave it empty if nothing is ruled out.',
+      instructions: 'What the author said must never appear in this story \u2014 content, themes or events they ruled out. Only what they ruled out.' }
 ];
 
 
@@ -32978,7 +32992,7 @@ var CE_PICKER_DEFS: { [k: string]: any } = {
     buildShape: {
         title: 'What these are made of',
         hint: 'Picks which questions the pass asks, and what the profile shows afterwards. Every record built at this scale gets it.',
-        options: function(): any[] {
+        options: function(ctx?: any): any[] {
             // [SEED-DEFS-CHAR] THE CHARACTER VOCABULARY IS ITS OWN, and the overlap in the
             // word `classic` is the trap: for an entity it means "no questions, one prose
             // box", for a character it means the sheet -- four real questions. Offering the
@@ -32986,7 +33000,10 @@ var CE_PICKER_DEFS: { [k: string]: any } = {
             var pst: any = null;
             try { pst = ceBuildStore ? ceBuildStore.get() : null; } catch (_ePo) { pst = null; }
             var pKd: any = (pst && pst.kdef) || null;
-            if (String((pKd && pKd.kind) || '') === 'character') {
+            // [BUILD-SETUP] Setup opens this for a kind that is not the stage on screen, and
+            // says which in ctx.
+            var pKind = (ctx && ctx.kind) ? String(ctx.kind) : String((pKd && pKd.kind) || '');
+            if (pKind === 'character') {
                 return [
                     { id: 'classic', label: 'Classic',
                       sub: 'The character sheet \u2014 appearance, personality, voice, background' },
@@ -33005,7 +33022,8 @@ var CE_PICKER_DEFS: { [k: string]: any } = {
                   sub: 'No questions. Prose you write, or the pass extracts whole' }
             ];
         },
-        current: function(): string {
+        current: function(ctx?: any): string {
+            if (ctx && ctx.cur !== undefined) return String(ctx.cur || '');   // [BUILD-SETUP]
             var sst: any = null;
             try { sst = ceBuildStore ? ceBuildStore.get() : null; } catch (_ePs) { sst = null; }
             return String((sst && sst.scopeShape) || 'builder');
@@ -33069,17 +33087,11 @@ var CE_PICKER_DEFS: { [k: string]: any } = {
             // names eight steps and shows five, skipping the numbers of doors that are not
             // there. A STAGE THAT IS NOT OFFERED DOES NOT HAVE A NUMBER, which is the same
             // honesty `built` itself is for: it is not a stage yet, so it is not a step yet.
-            var nBuilt = 0;
-            for (var bi = 0; bi < CE_BUILD_STAGES.length; bi++) {
-                if (CE_BUILD_STAGES[bi].built) nBuilt++;
-            }
-            var step = 0;
-            for (var i = 0; i < CE_BUILD_STAGES.length; i++) {
-                if (!CE_BUILD_STAGES[i].built) continue;
-                step++;
-                out.push({ id: String(CE_BUILD_STAGES[i].id),
-                           label: String(CE_BUILD_STAGES[i].label),
-                           sub: 'Step ' + step + ' of ' + nBuilt });
+            var shownSt: any[] = _ceBuildStagesShown();   // [BUILD-SETUP]
+            for (var i = 0; i < shownSt.length; i++) {
+                out.push({ id: String(shownSt[i].id),
+                           label: String(shownSt[i].label),
+                           sub: 'Step ' + (i + 1) + ' of ' + shownSt.length });
             }
             return out;
         },
@@ -34851,12 +34863,11 @@ async function _ceThreadGenShim(threadId: string): Promise<any> {
 // `excludeField` is the field being written: its current text is kept OUT of the notes, or
 // a regenerate would be handed its own previous answer as reference and converge on it.
 // [P-WORLD-SPAN] THE PROFILE GENERATORS RUN ON THE CHARTER'S RULES TIER, with the legacy
-// global style behind it. CE_P_STYLE_TIER says of itself that it is "stamped onto EVERY
-// generation the tool makes -- every place, person, group and object, for the life of the
-// story", and it was reaching the Build route's four channels and NOT the generator that
-// writes the final text of a record. Its naming guidance -- the part its own prompt says to
-// give the most words to -- exists so places and people are named consistently, and it was
-// missing from the one call that names them.
+// global style behind it. The Rules tier was "stamped onto EVERY generation the tool makes",
+// and it was reaching the Build route's channels and NOT the generator that writes the final
+// text of a record.
+// [RULES-RETIRED] Nothing writes the Rules tier since 3.14.12, so this reads it only in a
+// story built before then, and otherwise falls to the global style as a pre-charter story did.
 // PRECEDENCE, NOT CONCATENATION, on ceAuthorNoteBody's rule: the charter wins where it has
 // anything, and cfg.generalStyle is the fallback for a story written before the charter
 // existed. Sending both would put two style instructions in one prompt with nothing saying
@@ -66485,6 +66496,10 @@ interface CharterState {
     // CE_PATTERN_ORDER, 'random' means one roll per row at mint. A POLICY, NOT A VALUE --
     // it decides what is written onto rows, and is read nowhere after they are written.
     castPatternMode?: string;
+    // [BUILD-SETUP] Which kinds this story builds ({ kind: false } is off) and whether Setup
+    // has been confirmed once. Both are inputs to the pipeline, which is what the charter is.
+    kinds?: any;
+    setupSeen?: boolean;
     updatedAt: number;
 }
 
@@ -66513,6 +66528,8 @@ async function loadCharter(): Promise<CharterState> {
             // [CAST-PAT-ROLL] Absent reads as '' and ceCastPatternMode resolves that to
             // 'fixed', so a charter written before this existed keeps the old behaviour.
             castPatternMode: String((o as any).castPatternMode || ''),
+            kinds: (o.kinds && typeof o.kinds === 'object') ? o.kinds : {},
+            setupSeen: !!o.setupSeen,
             updatedAt: Number(o.updatedAt) || 0
         };
     } catch (eLc) {
@@ -66552,6 +66569,10 @@ async function ceCharterWrite(key: string, value: any): Promise<void> {
     else if (k === 'ladders') {
         (c as any).ladders = (value && typeof value === 'object') ? value : {};
     }
+    else if (k === 'kinds') {   // [BUILD-SETUP]
+        (c as any).kinds = (value && typeof value === 'object') ? value : {};
+    }
+    else if (k === 'setupSeen') { (c as any).setupSeen = !!value; }
     else { api.v1.error('[AE:charter] refused unknown field:', k); return; }
     await saveCharter(c);
     // [CHARTER-AN] THE VOICE TIER PUBLISHES ON WRITE, at the one site that writes it. The
@@ -66577,19 +66598,6 @@ async function ceCharterWrite(key: string, value: any): Promise<void> {
 // [WORLD-HELPER] TWO AUDIENCES, TWO FIELDS. `instructions` is model-facing scope guidance;
 // `helper` is what the author reads while deciding. They were one field, rendered at both,
 // and the seeds are written at a model.
-
-// [WORLD-PICK] How many questions of its own the pass may mint. NAMED, because it is stated
-// to the author on the surface and to the model in the ask, and a number written three times
-// is a number that ends up meaning three different things.
-// [WORLD-PICK-ADD] THE CEILING ON MINTED QUESTIONS, read by the ask AND by the copy that
-// tells the author it can happen. An author who is not told a question can be written reads
-// a new one on the list as a bug in the defaults.
-var CE_WORLD_PICK_ADD_MAX = 2;
-
-// The two questions the chooser may never switch off. Not a `core` flag on the record: a
-// flag invites a surface to render it, and this is a property of ONE pass rather than of the
-// question. The author may still turn them off by hand.
-var CE_WORLD_ALWAYS: string[] = ['wsec_premise', 'wsec_setting'];
 
 // ONE RESOLVER PER ADDRESS. `helper` on the record wins; the default table answers for every
 // story saved before the field existed; `instructions` is the last resort so a hand-added
@@ -66689,7 +66697,7 @@ function ceWorldIsDefault(id: string): boolean {
 // render-time index across a blur.
 // SEEDS FROM THE DEFAULTS when cfg has no list yet, because a config written before
 // DEFAULT_WIZARD_SECTIONS existed would otherwise gain its first question by accident.
-var CE_WORLD_SEC_FIELDS: string[] = ['label', 'enabled', 'content', 'instructions', 'helper', 'target'];
+var CE_WORLD_SEC_FIELDS: string[] = ['label', 'enabled', 'content', 'instructions', 'helper', 'target', 'noneAt'];
 async function ceWorldSecWrite(id: string, patch: any): Promise<void> {
     var sid = String(id || '');
     if (!sid || !patch) return;
@@ -66840,8 +66848,8 @@ function ceKindScopeHint(kind: string, id: string): string {
 // which is a migration disguised as a cleanup. When the last of those stories is gone the
 // fallback is one line to delete and the sections go with it.
 // [VOICE-SPLIT] THE VOICE TIER IS TWO ARTIFACTS AND THEY WANT DIFFERENT SLOTS.
-// CE_P_PLAY_TIER asks for exactly two things, in this order and no other: one bracketed
-// tag line, then the voice prose. It has always been written whole into the Author's Note,
+// The retired Voice prompt asked for exactly two things, in this order and no other: one
+// bracketed tag line, then the voice prose [RULES-RETIRED]. It has always been written whole into the Author's Note,
 // which put the tag line in the slot the convention has moved AWAY from -- the tag belongs at
 // the head of Memory, where the story model reads it first, and the prose belongs in the Note
 // where it steers the narrator turn by turn.
@@ -67056,15 +67064,6 @@ var CE_P_NAMING =
   + 'syllables assembled to sound impressive, and any word chosen for how it sounds while '
   + 'meaning nothing.';
 
-// The premise chat's own block. Appended after CORE + CHAT, and it is the only per-surface
-// prompt in this section -- the rest of the pipeline's per-surface blocks arrive with their
-// surfaces.
-// THE CHECKLIST IS COVERAGE, NOT A SCRIPT. Stating it as topics rather than as questions is
-// what stops the model marching through it; CE_P_CHAT's one-question-per-reply rule already
-// caps the pace.
-// \"A story about one house is not a small story\" is doing specific work: every model's
-// prior on worldbuilding is EXPANSION, so an author with a chamber piece gets it inflated by
-// default unless told otherwise.
 // [WORLD-QLIST] THE WORLD CHAT'S BLOCK, AND BOTH CALLERS BUILD IT HERE. The dock renders it
 // and the extraction rebuilds it, and they must produce the same bytes or the extraction pays
 // for a prefix it was written to reuse -- the same contract SCOPE-CHAT-STABLE holds the scope
@@ -67089,32 +67088,17 @@ function ceWorldOtherAnswers(qs: any[], skipId: string): string {
 
 async function ceWorldChatBlock(): Promise<string> {
     var qb = await ceWorldQuestionBlock();
-    return qb ? (CE_P_WORLD + '\n\n' + qb) : CE_P_WORLD;
+    var kb = '';
+    try { kb = ceWorldKindsBlockFrom(_ceBuildKindLabels(await loadCharter())); } catch (eKb) { kb = ''; }
+    return [CE_P_WORLD, qb, kb].filter(function(s: string) { return !!s; }).join('\n\n');
 }
-// [BENCH-INPUTS] The same block over a question list the caller supplies.
-function ceWorldChatBlockFrom(qs: any[]): string {
+// [BENCH-INPUTS] The same block over a question list and kind labels the caller supplies.
+function ceWorldChatBlockFrom(qs: any[], kinds?: string[]): string {
     var qb = ceWorldQuestionBlockFrom(qs);
-    return qb ? (CE_P_WORLD + '\n\n' + qb) : CE_P_WORLD;
+    var kb = ceWorldKindsBlockFrom(kinds || []);
+    return [CE_P_WORLD, qb, kb].filter(function(s: string) { return !!s; }).join('\n\n');
 }
 
-var CE_P_PREMISE =
-    'THIS CONVERSATION\n'
-  + 'You are helping the author settle what their story actually is, before anything gets '
-  + 'written down. This is the first thing they do and everything else is built on it.\n\n'
-  + 'By the end you want to have covered, without ever interrogating them for it:\n'
-  + '- what kind of story this is, and what happens in it\n'
-  + '- where and when it is set, and how much of that place the story actually moves '
-  + 'through\n'
-  + '- how names sound here \u2014 the shape of a person\u2019s name, a place\u2019s name, '
-  + 'a group\u2019s name\n'
-  + '- what is true of this world that would not be true of ours, if anything\n'
-  + '- anything that must never appear\n\n'
-  + 'Names matter more than they look like they do. Two or three real examples the author is '
-  + 'happy with are worth more than any amount of description, so when the conversation is '
-  + 'going well, ask for them.\n\n'
-  + 'Take what they bring at face value. A story about one house is not a small story, and '
-  + 'does not want widening. If they hand you three words, offer them two concrete '
-  + 'directions and let them react rather than asking what they mean.';
 
 // The world profile's chat. [CHARTER-CANON-NONE] What this conversation produces IS the
 // canon tier -- there is no third compression call, because the answers themselves are the
@@ -67123,31 +67107,40 @@ var CE_P_PREMISE =
 // this chat exists to perform, and it is stated as a RULE FOR WHAT TO DO WITH AN EVENT
 // rather than as a prohibition on mentioning one. A model told not to write events writes
 // nothing; a model told how to turn one into a fact writes the fact.
+// [TALK-ONE] THE ONE CONVERSATION. It replaced two: Premise, which asked for the story and,
+// above all, for names ("Names matter more than they look like they do"), and World, which
+// asked for canon. Naming is no longer the conversation's job: the author's own names are
+// kept because the core says so, and a thing with no name yet is planned without one.
 var CE_P_WORLD =
     'THIS CONVERSATION\n'
-  + 'You are helping the author write the permanent canon of their world \u2014 the block of '
-  + 'text the story\u2019s narrator will have in front of it for every single scene, '
-  + 'forever.\n\n'
-  + 'That is what makes this different from anything else you will help with. Nothing here '
-  + 'is description or atmosphere. It is the set of things that must stay true, stated '
-  + 'plainly enough that they can be read at a glance and never argued with.\n\n'
-  + 'There is a fixed set of questions to cover, listed below. Work through them in whatever '
-  + 'order the author wants, and let them skip any of them.\n\n'
+  + 'You are helping the author work out their story and the world it happens in. '
+  + 'Everything else this tool builds comes from what is settled here: the facts the '
+  + 'story\u2019s narrator reads before every scene, and the places, peoples, groups, people '
+  + 'and things that get records of their own.\n\n'
+  + 'Cover what the story is and what happens in it, where and when it is set, how much of '
+  + 'that place it moves through, and what is true here that is not true in ours. Let the '
+  + 'author go in any order and skip anything. The facts are read from this conversation '
+  + 'using the questions listed below, so when the author settles one, say it plainly.\n\n'
+  + 'Take what they bring at face value. A story about one house is not a small story and '
+  + 'does not want widening. If they give you three words, offer two concrete directions '
+  + 'and let them react.\n\n'
+  + 'Use the author\u2019s names for things. Something without a name yet is fine as it '
+  + 'is: it does not need one to be planned, so offer names only when the author asks.\n\n'
   + 'Prefer what stays true over what happens. A war that ends is an event; the border it '
-  + 'was fought over is canon. If the author gives you an event, ask what it left behind.';
+  + 'was fought over is a fact. If the author gives you an event, ask what it left behind.';
 
-// [WORLD-PICK] THE CHOOSER'S ASK. Two properties carry it, and neither is prompt polish.
-// LEAVING A QUESTION OUT IS NAMED AS THE NORMAL CASE. Every model's prior on a checklist is
-// to tick it, so a chooser that does not say "most of these do not apply" returns all of
-// them and the pass has done nothing.
-// IT ANSWERS IN IDS, NOT LABELS. The ids are a closed set the caller already holds, so an
-// unknown line is dropped without a fuzzy match against a label an author may have renamed.
-// [P-NO-SETTING] The examples name no setting: "a story with no violence in it" and "a story
-// about one household" are shapes, not worlds.
-// [FIELD-MINT] WRITING THE QUESTIONS, not answering them. WORLD-PICK-ADD does this for the
-// world's own question set and this is the same act one level down: read the conversation,
-// work out what a record of this kind needs to be asked, and write those questions into the
-// kind's field library.
+// [BUILD-SETUP] The kinds Setup switched on, so the conversation knows what it is
+// gathering material for. Last in the block: it changes only when Setup does.
+function ceWorldKindsBlockFrom(labels: string[]): string {
+    if (!labels || !labels.length) return '';
+    return 'WHAT THIS WORLD KEEPS RECORDS OF\n' + labels.join(', ') + '\n'
+         + 'Each of these gets records of its own later, made from this conversation. When '
+         + 'one comes up, help the author say what it is and where it sits.';
+}
+
+// [FIELD-MINT] WRITING THE QUESTIONS, not answering them: read the conversation, work out
+// what a record of this kind needs to be asked, and write those questions into the kind's
+// field library.
 //
 // IT EXISTS BECAUSE A SEED PASS WITH NO QUESTIONS CANNOT RUN. An item's catalog base is
 // EMPTY -- `item: { base: [], ... }` -- so until an author defines fields by hand there is
@@ -67156,7 +67149,7 @@ var CE_P_WORLD =
 // (a seedless field is not a degraded one) covers a NARROW ask against a full set; it does
 // not cover an empty one.
 //
-// THE FORMAT IS WORLD-PICK-ADD'S EXACTLY -- `+ Name | one line` -- because there is no
+// THE FORMAT IS `+ Name | one line`, the one the retired world chooser used, because there is no
 // reason for two parse shapes for one act, and the world pass's parser was written against
 // a model's actual failure modes rather than against a specification.
 var CE_FIELD_MINT_MAX = 6;
@@ -67215,33 +67208,6 @@ var CE_P_OPENING =
   + 'Prose only: no headings, no title, no bullet points, no note to the author, nothing '
   + 'before the first line or after the last.';
 
-var CE_P_WORLD_PICK =
-    'Choose which of these questions this story should answer.\n\n'
-  + 'A question belongs if the answer would be specific to THIS story and would change how '
-  + 'it is written. It does not belong if the honest answer is generic, or if nothing in the '
-  + 'conversation suggests this story has one at all.\n\n'
-  + 'LEAVING QUESTIONS OUT IS THE NORMAL RESULT, not a failure. A story with no violence in '
-  + 'it has no question about harm. A story that never leaves one household has no question '
-  + 'about the largest scale it reaches. Choosing everything is the same as choosing '
-  + 'nothing.\n\n'
-  + 'A question marked [ALREADY ANSWERED] has text in it and stays on whatever you decide, '
-  + 'so there is no need to list its id \u2014 but read it as ground that is TAKEN: do not '
-  + 'add a new question covering the same thing under another name.\n\n'
-  + 'The questions, as id, name and what each covers:\n';
-
-var CE_P_WORLD_PICK_TAIL =
-    '\n\nReply with one id per line \u2014 only the ids of the questions that belong, and '
-  + 'nothing else on those lines.\n\n'
-  + 'Then WRITE ANY QUESTION THIS STORY NEEDS THAT THE LIST ABOVE DOES NOT COVER. Most '
-  + 'stories need none and that is a fine answer; a story built on something the list has no '
-  + 'name for needs one. Up to ' + String(CE_WORLD_PICK_ADD_MAX) + ', each on its own line, '
-  + 'in exactly this form:\n'
-  + '+ Name | one line saying what belongs in it\n\n'
-  + 'The line after the bar is read by the author in the empty box and by the writer filling '
-  + 'it, so say what belongs there rather than describing the question.\n\n'
-  + 'A question is a standing fact the story\u2019s narrator needs in every scene. Never add '
-  + 'one for a particular person, place, group, object or event \u2014 those are recorded '
-  + 'elsewhere and do not belong here.';
 
 // [WORLD-EXTRACT] ONE QUESTION PER CALL, and the ask is parameterised because the scope line
 // is the only part that varies. The `none` channel is the load-bearing half: this pass runs
@@ -67316,8 +67282,11 @@ function _ceWorldExtractAsk(label: string, scope: string, others?: string): stri
 function _ceWorldExtractRead(text: string): any {
     var t = String(text || '');
     // Labels may come bold, with the colon inside or outside the asterisks.
-    var sm = /(^|\n)[ \t]*\**[ \t]*SAID[ \t]*\**[ \t]*:[ \t]*\**/i.exec(t);
-    var am = /(^|\n)[ \t]*\**[ \t]*ANSWER[ \t]*\**[ \t]*:[ \t]*\**/i.exec(t);
+    // Bench, 3.14.11: one run wrote both labels alone on their lines with no colon, and its
+    // quotes and answer were right. The colon is decoration; a bare label on its own line is
+    // the same label.
+    var sm = /(^|\n)[ \t]*\**[ \t]*SAID[ \t]*\**[ \t]*(:[ \t]*\**|(?=\r?\n))/i.exec(t);
+    var am = /(^|\n)[ \t]*\**[ \t]*ANSWER[ \t]*\**[ \t]*(:[ \t]*\**|(?=\r?\n))/i.exec(t);
     if (!sm || !am || am.index < sm.index) return { form: false, said: [], answer: '' };
     var saidTxt = t.slice(sm.index + sm[0].length, am.index);
     var ansTxt = t.slice(am.index + am[0].length).trim();
@@ -67586,62 +67555,6 @@ var CE_P_SEED_RELAPSE =
   + '\u2014 label, colon, one sentence \u2014 with no question in them and no address to '
   + 'anyone. If the conversation settled nothing about this, reply with the single word: none';
 
-// ── Charter compression  [CHARTER-COMPRESS] ─────────────────────────────────
-// TWO CALLS, ONE PER TIER, and never one call for both. An earlier arrangement asked for
-// every tier in one reply and the first tier ate the whole output budget -- the same finding
-// as the name/description split, arrived at twice.
-// THE WARNING GOES FIRST ON BOTH. The failure it names is specific and it does happen: a
-// model summarising a conversation replaces \"the Ashen Choir\" with \"a religious order\"
-// without noticing it has destroyed anything.
-var CE_P_COMPRESS_WARN =
-    'READ THIS BEFORE WRITING.\n\n'
-  + 'The conversation above is about to be discarded. This is the last time you or anything '
-  + 'else will see it. What you write now is the only part that survives into everything the '
-  + 'tool generates from here.\n\n'
-  + 'Capture every name the author gave you, in their exact words \u2014 every person, '
-  + 'place, group, object and idea they named. Never replace a name with a description of '
-  + 'it. Anything you leave out or rename is gone.';
-
-// THE STRICTEST PROMPT IN THE PIPELINE, because it has the widest blast radius. Three moves
-// here transfer to anything with a wide reach: state the blast radius FIRST, give a WORD
-// BUDGET rather than \"be brief\", and give the model a DELETION TEST it can apply to its own
-// output.
-// The last paragraph prevents the specific failure the tier system exists for: one named
-// thing placed in this tier is then forced onto every record in the world.
-var CE_P_STYLE_TIER =
-    'Write the RULES tier of this world\u2019s charter.\n\n'
-  + 'This text is stamped onto EVERY generation the tool makes \u2014 every place, person, '
-  + 'group and object, for the life of the story. It is a set of INSTRUCTIONS to those '
-  + 'writers, not writing itself. Put nothing here that should not apply to every single '
-  + 'thing in this world.\n\n'
-  + 'UNDER 120 WORDS TOTAL. Plain instruction lines:\n\n'
-  + '- Premise: one line saying what kind of world this is.\n'
-  + '- Naming: how names sound and are built here \u2014 for people, for places, for '
-  + 'groups. Give two or three examples the author actually used or approved. Say what '
-  + 'naming style to avoid. THIS IS THE MOST IMPORTANT PART. Give it the most words.\n'
-  + '- Hard rules: at most three, and only rules that are true absolutely everywhere.\n'
-  + '- Forbidden: what must never appear, if the author said so. Omit this line otherwise.\n\n'
-  + 'No atmosphere. No imagery. No mood words. No adjective strings. No scene-setting. If a '
-  + 'line reads like it belongs in a story rather than on a checklist, delete it.\n\n'
-  + 'Do not name a single specific place, person, group or event. Those belong elsewhere, '
-  + 'and anything named here is forced onto everything in the world.';
-
-var CE_P_PLAY_TIER =
-    'Write the VOICE tier of this world\u2019s charter.\n\n'
-  + 'This goes to the story\u2019s narrator and to nothing else. It never reaches the '
-  + 'tool\u2019s own writers, so it is about how the story READS, not about what is in the '
-  + 'world.\n\n'
-  + 'Two parts, under 120 words total:\n\n'
-  + '- One bracketed line, exactly this shape and nothing else on it:\n'
-  + '  [ Author: <name>; Title: <title>; Tags: <comma-separated>; Genre: <genre> ]\n'
-  + '  Pick an author whose sensibility actually fits what the author described.\n'
-  + '- The voice: name two authors whose combined sensibilities capture it, chosen for '
-  + 'emotional register and prose rhythm rather than for genre, and set against each other '
-  + 'rather than agreeing. Then say concretely what that produces \u2014 sentence length, '
-  + 'how much description, how much interiority, how the prose handles feeling.\n\n'
-  + 'No plot. No characters. No setting facts. Those are elsewhere, and repeating them here '
-  + 'spends the narrator\u2019s attention twice.';
-
 // [P-SUBSTRATE] THE HEAD, ASSEMBLED IN ONE PLACE. Every caller reads through this rather
 // than concatenating its own order -- two assemblies is two prefixes, and two prefixes is
 // a cache that is warm for neither.
@@ -67686,8 +67599,8 @@ async function ceWorldSpan(): Promise<string> {
         var qs: any[] = [];
         try { qs = await ceWorldQuestions(); } catch (eWs1) { qs = []; }
         // [P-WORLD-SPAN] THE VOICE TIER IS NOT IN THIS SPAN, AND 3.12.9 PUT IT HERE WRONGLY.
-        // CE_P_PLAY_TIER states its own destination in its second sentence: "This goes to the
-        // story's narrator and to nothing else. It NEVER REACHES THE TOOL'S OWN WRITERS."
+        // The Voice prompt stated its own destination: "This goes to the story's narrator and
+        // to nothing else. It NEVER REACHES THE TOOL'S OWN WRITERS."
         // This span is the head of every utility-model call in the engine -- it is precisely
         // the tool's own writers, and nothing else. So the tier was being stamped on every
         // seed, name, chat and opening call with an explicit instruction not to be.
@@ -67695,10 +67608,9 @@ async function ceWorldSpan(): Promise<string> {
         // two-author prose anchor; a pass filling "what does this faction control" has no use
         // for sentence rhythm and no use at all for a bracketed Genre tag, and both spend
         // attention that the world's actual facts want.
-        // THE RULES TIER STAYS, and the contrast is the point: CE_P_STYLE_TIER says it is
-        // "stamped onto EVERY generation the tool makes", which is this span exactly. Two
-        // tiers, two audiences, and the prompts already say which is which -- the span just
-        // has to believe them.
+        // THE RULES TIER IS READ WHERE A STORY STILL HAS ONE [RULES-RETIRED]. Its prompt said it
+        // was "stamped onto EVERY generation the tool makes", which is this span exactly.
+        // Nothing writes it now; the world's facts are the answered questions below it.
         return ceWorldSpanFrom(String((c && c.style) || ''), qs);
     } catch (eWs) { api.v1.error('[AE:head] world span failed:', eWs); return ''; }
 }
@@ -69093,8 +69005,10 @@ function _ceDraftOnList(d: any, kind: string, listId: string): boolean {
 }
 
 var CE_BUILD_STAGES: any[] = [
-    { id: 'premise',  label: 'Premise',   built: true  },
-    { id: 'charter',  label: 'Charter',   built: true  },
+    // [TALK-ONE] PREMISE AND CHARTER ARE GONE; WORLD IS THE FIRST STAGE. Premise was a
+    // conversation whose only readers were the charter compression and the question chooser,
+    // and Charter was the two tiers that compression wrote. The world conversation now
+    // carries the story as well as its canon, and its answers are the one artifact.
     { id: 'world',    label: 'World',     built: true  },
     // [SCOPE-ONE-STAGE] Scope and Locations were two stages and are one. WIZUI 5 gap 1
     // already puts the rung question "inline in S6's empty state at a new depth, as one
@@ -69130,20 +69044,53 @@ var CE_BUILD_STAGES: any[] = [
 // with nothing stored landed on step 2 of 8 and the author never saw the premise question the
 // whole cascade reads from. Naming a stage here is what let the two drift from the array's own
 // order; taking index 0 cannot.
-function _ceBuildFirstStage(): string {
+// [BUILD-SETUP] WHICH KINDS THIS STORY BUILDS, as Setup last published them. Module state
+// because the stage picker and the spine are synchronous and the charter is not; written at
+// the top of every cePublishBuild, before the stage is resolved. Only an explicit false is
+// off, so a story that has never seen Setup builds every kind.
+var _ceBuildKindsOff: any = {};
+function _ceBuildStageOn(sg: any): boolean {
+    if (!sg || !sg.built) return false;
+    var kd: any = CE_BUILD_KINDS[String(sg.id)] || null;
+    if (kd && _ceBuildKindsOff[String(kd.kind)] === true) return false;
+    return true;
+}
+// [BUILD-SETUP] The stages offered, in order. The picker, both spines and the stage
+// resolver all read this, so a kind switched off in Setup is gone from all four at once.
+function _ceBuildStagesShown(): any[] {
+    var out: any[] = [];
     for (var i = 0; i < CE_BUILD_STAGES.length; i++) {
-        if (CE_BUILD_STAGES[i].built) return String(CE_BUILD_STAGES[i].id);
+        if (_ceBuildStageOn(CE_BUILD_STAGES[i])) out.push(CE_BUILD_STAGES[i]);
     }
-    return '';
+    return out;
+}
+function _ceBuildFirstStage(): string {
+    var shown = _ceBuildStagesShown();
+    return shown.length ? String(shown[0].id) : '';
 }
 function _ceBuildStage(): string {
     var first = _ceBuildFirstStage();
     var t = ceTabGet('build', first);
     if (t === 'scope') t = 'places';
-    for (var i = 0; i < CE_BUILD_STAGES.length; i++) {
-        if (CE_BUILD_STAGES[i].id === t && CE_BUILD_STAGES[i].built) return t;
+    var shown = _ceBuildStagesShown();
+    for (var i = 0; i < shown.length; i++) {
+        if (String(shown[i].id) === t) return t;
     }
     return first;
+}
+// [BUILD-SETUP] The labels of the kinds this story builds, for the conversation's block.
+// `charter` null means every kind, which is what the bench passes.
+function _ceBuildKindLabels(charter: any): string[] {
+    var off: any = (charter && charter.kinds) || {};
+    var out: string[] = [];
+    for (var i = 0; i < CE_BUILD_STAGES.length; i++) {
+        var sg: any = CE_BUILD_STAGES[i];
+        var kd: any = CE_BUILD_KINDS[String(sg.id)] || null;
+        if (!kd || !sg.built) continue;
+        if (off[String(kd.kind)] === false) continue;
+        out.push(String(sg.label));
+    }
+    return out;
 }
 
 // -- Store --------------------------------------------------------------------
@@ -69157,7 +69104,7 @@ function ceBuildStoreInit(): void {
                                     pending: false, chatBlock: '', seedDefs: [],
                                     chatKey: '', chatLabel: '', scopeShape: 'builder',
                                     kdef: null, listAt: '', listDefs: [], cfg: null,
-                                    chatAddr: '' });
+                                    chatAddr: '', setupRows: [], premiseTurns: 0 });
     } catch (e) { api.v1.error('[AE:build] store init failed:', e); }
 }
 
@@ -69172,6 +69119,11 @@ async function cePublishBuild(): Promise<void> {
     if (!ceBuildStore) return;
     try {
         var c = await loadCharter();
+        // [BUILD-SETUP] Before the stage resolves, so a switched-off stage cannot be landed on.
+        var kOff: any = {};
+        var kMap: any = (c as any).kinds || {};
+        for (var kk in kMap) { if (kMap[kk] === false) kOff[kk] = true; }
+        _ceBuildKindsOff = kOff;
         var stg = _ceBuildStage();
         // [REC-CHAT] Which conversation is showing, read BEFORE the awaits because it
         // decides which transcript to load. '' is the scope chat.
@@ -69205,17 +69157,25 @@ async function cePublishBuild(): Promise<void> {
         // address. It is named here rather than folded into the kdef test because it is not
         // a kind: there is no queue behind it and no records come out of it.
         if (stg === 'open') { chatScope = 'opn:top'; }
-        var ch: any = (stg === 'premise' || stg === 'world' || stg === 'open' || !!kdef)
+        var ch: any = (stg === 'world' || stg === 'open' || !!kdef)
             ? await loadBuildChat(chatScope) : null;
         // [BUILD-WORLD] THE QUESTIONS ARE cfg.wizardSections, NOT A NEW LIST. That array is
         // already the world's question set, already editable on the old surface, and already
         // the thing assembleWizardMemory projects into NAI Memory. A second list beside it
         // would be a second source of truth about what this world's canon asks.
         var secs: any[] = [];
+        var setupRows: any[] = [];
+        var premiseTurns = 0;
         if (stg === 'world') {
             var wcfg: any = await loadConfig();
             secs = (wcfg && wcfg.wizardSections && wcfg.wizardSections.length)
                  ? wcfg.wizardSections : DEFAULT_WIZARD_SECTIONS;
+            setupRows = ceBuildSetupRows(c, wcfg);
+            // [TALK-ONE] An earlier Premise conversation is offered once, while this one is empty.
+            if (!(ch && ch.turns && ch.turns.length)) {
+                try { premiseTurns = ((await loadBuildChat('premise')).turns || []).length; }
+                catch (ePt) { premiseTurns = 0; }
+            }
         }
         // [SCOPE-FORM] The queue is read only by the stage that renders it, on the same
         // rule as the transcript above: a publish that loaded every scope's drafts would
@@ -69422,6 +69382,7 @@ async function cePublishBuild(): Promise<void> {
         catch (eWb) { api.v1.error('[AE:build] world block:', eWb); worldBlk = CE_P_WORLD; }
         ceBuildStore.set(function(prev: any) {
             return { ready: true, stage: stg, charter: c, sections: secs, rows: qrows,
+                     setupRows: setupRows, premiseTurns: premiseTurns,
                      done: done, trail: trail, scopeAt: atId, rungHere: rungHere,
                      chatBlock: chatBlk, seedDefs: seedDefs,
                      // [WORLD-QLIST] [SCOPE-CHAT-STABLE] PUBLISHED, NOT BUILT IN THE
@@ -69641,11 +69602,8 @@ function _ceStepCell(s: any, idx: number, last: boolean): any {
 //   the count printed under it.
 function _ceBuildSpineWide(stage: string): any {
     var cells: any[] = [];
-    var built: any[] = [];
+    var built: any[] = _ceBuildStagesShown();   // [BUILD-SETUP]
     var i = 0;
-    for (i = 0; i < CE_BUILD_STAGES.length; i++) {
-        if (CE_BUILD_STAGES[i].built) built.push(CE_BUILD_STAGES[i]);
-    }
     var here = 0;
     for (i = 0; i < built.length; i++) { if (built[i].id === stage) here = i; }
     for (i = 0; i < built.length; i++) {
@@ -69701,11 +69659,12 @@ function _ceBuildSpine(stage: string): any {
     var segs: any[] = [];
     var here = 0;
     var i = 0;
-    for (i = 0; i < CE_BUILD_STAGES.length; i++) {
-        if (CE_BUILD_STAGES[i].id === stage) here = i;
+    var shownN: any[] = _ceBuildStagesShown();   // [BUILD-SETUP]
+    for (i = 0; i < shownN.length; i++) {
+        if (shownN[i].id === stage) here = i;
     }
-    for (i = 0; i < CE_BUILD_STAGES.length; i++) {
-        segs.push(h('div', { key: 'bsp' + CE_BUILD_STAGES[i].id, style: {
+    for (i = 0; i < shownN.length; i++) {
+        segs.push(h('div', { key: 'bsp' + shownN[i].id, style: {
             height: '3px',
             flex: (i === here) ? '2.2 1 0' : '1 1 0',
             // NO NEW COLOUR. CE_SEM.ok resolves to 'inherit', so tinting the current cell
@@ -69763,73 +69722,6 @@ function _ceBuildHeadPreview(c: any, open: boolean): any {
             text: ceBuildHead({ family: 'machine', records: true, naming: true,
                                 style: String((c && c.style) || '') }) })
     });
-}
-
-// [EMPTY-LEDE] AN EMPTY STATE INTRODUCES THE EDITOR; IT DOES NOT REPLACE IT. This function
-// early-returned ceEmpty() when both tiers were blank, which is the state EVERY story starts
-// in -- so the fields and the preview fold never rendered, there was nothing to type into,
-// and the empty state was therefore unreachable-from as well as unhelpful. Reported as two
-// separate faults ("nowhere to type", "no fold") that were one.
-// THE RULE, and it is narrower than "instruction lives in empty states": where a surface is
-// the ONLY way to create the thing it is empty of, its empty state is a LEDE above the
-// controls. ceEmpty() is for a surface whose content is created somewhere else.
-// This is READ-FIELD's rule one level up -- a read view that omits what is missing gives no
-// way to add it -- and it cost the same bug.
-function _ceBuildCharter(st: any): any {
-    var c: any = st.charter || ceCharterEmpty();
-    var blank = !String(c.style || '').trim() && !String(c.play || '').trim();
-    return ceStack(CE_T.s2, [
-        // [BUILD-COPY] "Charter" was the clearest case of a load-bearing word nobody
-        // introduced. The heading now says what the page produces; the stored keys stay
-        // `style` and `play`, on CHARTER-TIER-NAMES' rule that a label may move and a key
-        // may not.
-        ceStagePreamble('How it reads',
-            'Two blocks of instructions that ride every generation this tool makes: what is '
-            + 'always true in your world, and how the prose should sound.',
-            'The first is stamped onto every record you build. The second goes to the story '
-            + 'itself, through the Author\u2019s Note, as soon as you write it.'),
-        blank ? ceProse('t3',
-            'Nothing written yet. Write these yourself below, or let the Premise '
-            + 'conversation write both of them for you.') : null,
-        // [CHARTER-COMPRESS] THE WRITE BUTTON SITS ABOVE THE FIELDS IT WRITES. It was below
-        // them, on the argument that rewriting is something you do while looking at what you
-        // are about to replace -- which is true and is not where the control belongs. The
-        // fields are two multiline boxes; a control under them is off-screen at the moment
-        // it is wanted, and on a first run there is nothing above it to have read. A
-        // destructive control is announced BEFORE its target, not discovered after it.
-        // IT DISCARDS. Both tiers are overwritten by whatever comes back, so this is the one
-        // destructive control on this surface and it says so rather than asking twice.
-        ceBand(3, 'Write it from the Premise chat',
-            { state: blank ? 'open' : 'done' }, ceStack(CE_T.s2, [
-            ceProse('t3', 'Reads the Premise conversation and writes both blocks below. '
-                + 'Anything already written there is replaced.'),
-            ceBtn('Write the charter', 'build:compress', function() {
-                return ceBuildOp(function() { return ceCompressCharter(); })
-                    .then(function(msg: any) {
-                        try { api.v1.ui.toast(String(msg), { type: 'success', autoClose: 5000 }); } catch (_e) {}
-                        return cePublishBuild();
-                    });
-            }, blank ? 'primary' : undefined, 'Writing\u2026')
-        ])),
-        ceBand(4, 'What it says', { state: blank ? 'waiting' : 'done' }, ceStack(CE_T.s4, [
-        // [CHARTER-TIER-NAMES] "Rules" AND "Voice", AND THE KEYS DO NOT MOVE. The first tier
-        // was labelled Style, which sat one synonym away from Voice and described neither:
-        // its contents are a premise, naming conventions, hard rules and a forbidden list.
-        // The stored keys stay `style` and `play` on TAB-WORLD's rule -- renaming an id to
-        // match a label is how a rename becomes a migration.
-        _ceBuildCharterTier('What is always true',
-            'Stamped onto every place, person and group this tool writes. What this world '
-            + 'is, how names sound here, what is true everywhere, what must never appear. '
-            + 'Instructions, not writing.', 'style', String(c.style || '')),
-        // [CHARTER-AN] Voice reaches the Author's Note, and it does so on write -- see
-        // ceCharterWrite. The hint says so because it is now true.
-        _ceBuildCharterTier('How the prose sounds',
-            'Goes to the story itself, through the Author\u2019s Note, as soon as you write '
-            + 'it. How the writing reads \u2014 never what is in the world.',
-            'play', String(c.play || ''))
-        ])),
-        _ceBuildHeadPreview(c, _ceOpenIs('build:head'))
-    ]);
 }
 
 // -- The dock, hosted  [BUILD-CHAT] -------------------------------------------
@@ -69933,9 +69825,9 @@ function _ceBuildDock(st: any, scope: string, block: string, empty: string, ph: 
 // about to type. A prose line above the box would be a second element that outlives the
 // blank state and has to be conditionally hidden -- the placeholder clears itself.
 // What used to render here was `instructions`, which is the model's copy.
-// [WIZUI-GUIDE] The three fold bodies. Functions rather than vars because two of them read
-// CE_WORLD_PICK_ADD_MAX, and a top-level var reading another top-level var is the ordering
-// hazard the Chat token group already paid for once.
+// [WIZUI-GUIDE] The fold bodies. Functions rather than vars, so none of them reads another
+// top-level var before it is assigned -- the ordering hazard the Chat token group already
+// paid for once.
 // [KIND-NOUN] ONE GUIDE, ASSEMBLED FROM THE KIND'S OWN FACTS. It was three paragraphs of
 // location prose shown on every stage, which told an author building factions that a house
 // can sit directly inside a region. The middle paragraph is about the scope picker and the
@@ -69967,16 +69859,6 @@ function _ceScopeGuide(kind: string, hasScopes: boolean, recursive: boolean): st
 }
 // [KIND-SCOPE] _ceScopeScopeHint IS DELETED, superseded by ceKindScopeHint on the same
 // argument as ceLadderScopeOk: it read hints out of the location table for every kind.
-function _ceWorldPickGuide(): string {
-    return 'Not every story has intimacy, or violence, or a world that departs from the '
-         + 'ordinary \u2014 and some need a question none of the defaults cover.\n\n'
-         + 'Choose and write questions reads your Premise conversation, switches on the '
-         + 'questions this story has, and writes up to ' + String(CE_WORLD_PICK_ADD_MAX)
-         + ' of its own where the list falls short. It never switches off one you have '
-         + 'already answered.\n\n'
-         + 'It never switches one off to make room \u2014 a question you have answered stays '
-         + 'on whatever else it decides.';
-}
 function _ceWorldAddGuide(): string {
     return 'A question is a standing fact the narrator needs in every scene. A particular '
          + 'person, place or group is not one \u2014 those get records of their own further '
@@ -69986,8 +69868,8 @@ function _ceWorldAddGuide(): string {
 }
 function _ceWorldSaveGuide(): string {
     return 'Assembles every switched-on question that has an answer into the story\u2019s '
-         + 'Memory block, in the order above, and writes the Author\u2019s Note from the '
-         + 'charter\u2019s Voice tier.\n\n'
+         + 'Memory block, in the order above. A story with an earlier Voice block also gets '
+         + 'its Author\u2019s Note rewritten from it.\n\n'
          + 'Both are projections of what is already saved here, so pressing this twice does '
          + 'nothing the first press did not. Nothing on this screen reaches the story until '
          + 'you do press it.';
@@ -70045,7 +69927,86 @@ function _ceBuildWorldRow(sec: any, custom: boolean): any {
     ])]);
 }
 
+// [BUILD-SETUP] WHAT YOUR RECORDS LOOK LIKE, as rows. Computed at publish because the
+// question list needs the config; the renderer only draws. The questions shown are the ones
+// the kind's own pass asks (ceSeedDefs), so this cannot drift from what is asked.
+var CE_SHAPE_LABELS: any = {
+    builder: 'Lorebook Builder', custom: 'Custom fields only', classic: 'Classic'
+};
+var CE_CHAR_SHAPE_LABELS: any = {
+    classic: 'Classic', studio: 'Profile template', custom: 'Custom fields only'
+};
+function ceBuildSetupRows(c: any, cfg: any): any[] {
+    var off: any = (c && c.kinds) || {};
+    var out: any[] = [];
+    for (var i = 0; i < CE_BUILD_STAGES.length; i++) {
+        var sg: any = CE_BUILD_STAGES[i];
+        var kd: any = CE_BUILD_KINDS[String(sg.id)] || null;
+        if (!kd || !sg.built) continue;
+        var kind = String(kd.kind);
+        var hasShape = ceBuildKindHasShape(kind);
+        var shape = ceKindShape(kind, null, c);
+        var qs: string[] = [];
+        try {
+            var defs: any[] = ceSeedDefs(kind, _ceKindAskScope(kind, null, '', ''), cfg, shape);
+            for (var j = 0; j < defs.length; j++) {
+                var lab = String((defs[j] && (defs[j].label || defs[j].name)) || '').trim();
+                if (lab) qs.push(lab);
+            }
+        } catch (eSr) { qs = []; }
+        out.push({ stage: String(sg.id), label: String(sg.label), kind: kind,
+                   on: off[kind] !== false, hasShape: hasShape, shape: shape,
+                   ladder: !!kd.ladder, questions: qs });
+    }
+    return out;
+}
+
+function _ceBuildSetupLine(r: any): string {
+    if (!r.hasShape) return 'Written as one description.';
+    if (r.ladder) {
+        return 'What each scale is made of is chosen on the ' + String(r.label) + ' stage.';
+    }
+    var n = (r.questions || []).length;
+    if (!n) {
+        return r.kind === 'character' ? 'Asked nothing yet.' : 'No questions: one prose entry each.';
+    }
+    var shown = (r.questions as string[]).slice(0, 5).join(', ');
+    return 'Asked ' + String(n) + ' question' + (n === 1 ? '' : 's') + ': ' + shown
+         + (n > 5 ? ', and ' + String(n - 5) + ' more.' : '.');
+}
+
+// One kind's row. Its own function so each handler closes over its own row.
+function _ceBuildSetupRow(r: any, c: any): any {
+    var labels: any = (r.kind === 'character') ? CE_CHAR_SHAPE_LABELS : CE_SHAPE_LABELS;
+    return ceWrap({ key: 'setup:' + String(r.kind) }, [ceStack(CE_T.s1, [
+        ceRow(String(r.label), null, ceToggle(!!r.on, 'setup:on:' + String(r.kind), function() {
+            var next: any = {};
+            var cur: any = (c && c.kinds) || {};
+            for (var k in cur) next[k] = cur[k];
+            next[String(r.kind)] = !r.on;
+            return ceBuildOp(function() { return ceCharterWrite('kinds', next); })
+                .then(cePublishBuild);
+        }, (r.on ? 'Stop building ' : 'Build ') + String(r.label))),
+        !r.on ? ceSub('t3', 'Not built here. Its stage is hidden; records you already have are kept.')
+          : ceStack(CE_T.s1, [
+            (r.hasShape && !r.ladder) ? ceRow('Made of',
+                ceSub('t2', String(labels[String(r.shape)] || r.shape)),
+                ceBtn('Change', 'setup:shape:' + String(r.kind), function() {
+                    cePickerOpen('buildShape', { kind: String(r.kind), rungId: '', cur: String(r.shape) });
+                    return Promise.resolve();
+                })) : null,
+            ceSub('t3', _ceBuildSetupLine(r))
+          ])
+    ])]);
+}
+
+// [BUILD-WORLD] [TALK-ONE] THE FIRST STAGE, AND WHAT IT PRODUCES IS WHAT PLAN AND MAKE READ:
+// which kinds exist and what each is asked (Setup), the conversation (Talk), and the
+// world's answered questions (the World card). Nothing here writes a rule for other writers
+// to obey and nothing here asks for names; the answers are facts, and the same text goes to
+// Memory for the narrator and to the head of every Build call through ceWorldSpan.
 function _ceBuildWorld(st: any): any {
+    var c: any = st.charter || ceCharterEmpty();
     var secs: any[] = st.sections || [];
     var rows: any[] = [];
     var answered = 0;
@@ -70063,127 +70024,98 @@ function _ceBuildWorld(st: any): any {
     var tally = String(answered) + ' of ' + String(asked) + ' answered';
     if (left) tally += '  \u00b7  ' + String(left) + ' left out';
     var wTurns = ((st.turns || []) as any[]).length;
+    var setupRows: any[] = st.setupRows || [];
+    var nOn = 0;
+    for (var si = 0; si < setupRows.length; si++) { if (setupRows[si].on) nOn++; }
+    var seen = !!c.setupSeen;
+    var oldRules = String(c.style || '').trim();
+    var oldVoice = String(c.play || '').trim();
+    var setupKids: any[] = [];
+    for (var sj = 0; sj < setupRows.length; sj++) setupKids.push(_ceBuildSetupRow(setupRows[sj], c));
+    if (!seen) {
+        setupKids.push(ceBtn('Looks right', 'setup:seen', function() {
+            return ceBuildOp(function() { return ceCharterWrite('setupSeen', true); })
+                .then(cePublishBuild);
+        }, 'primary'));
+    }
     return ceStack(CE_T.s2, [
-        // ── BAND 0 ──
-        ceStagePreamble('The world',
-            'The facts that stay true for the whole story \u2014 the block the narrator '
-            + 'reads before every scene. Talk them through, then let the engine work out '
-            + 'which your story has and fill in what you already settled.',
-            'Saving puts them in the story\u2019s Memory, where every generation sees '
-            + 'them.'),
-        // [EMPTY-LEDE] Above the questions, never in their place.
-        answered ? null : ceProse('t3',
-            'Nothing answered yet. Most stories need only a handful of these \u2014 '
-            + 'leaving one out is a normal answer, not a gap.'),
-        // ── BAND 1 · TALK ──
-        ceBand(1, 'Talk it through', { state: wTurns ? 'open' : 'waiting' },
-            ceChatPanel('Conversation', wTurns,
-                _ceBuildDock(st, 'world', String(st.worldBlock || CE_P_WORLD),
-                    'What is always true in this world?',
-                    'Talk through the world\u2019s canon'))),
-        // [WORLD-PICK] [WORLD-EXTRACT] The two passes sit together and in the order they are
-        // used: choosing narrows the set, extracting fills what is left. Extracting first
-        // would spend a call on every question the story does not have.
-        // [WIZUI-GUIDE] WIZUI 3.2: NOTHING IN THIS PIPELINE GETS A PERMANENT PARAGRAPH OF
-        // INSTRUCTION ON SCREEN. What a novice needs after the empty state is gone lives in a
-        // GUIDE-BODY fold, which is a '?' on the group's own heading row rather than a line
-        // of its own. Three paragraphs on this surface were standing prose and are now three
-        // folds; the empty-state lede above stays, because 3.1 is what puts it there.
-        // ── BAND 2 · SET UP ──
-        ceBand(2, 'Which questions this story has',
-            { state: asked ? 'done' : 'open',
-              openKey: asked ? 'band:world:setup' : '',
-              summary: tally },
-            ceStack(CE_T.s4, [
-        ceGroup('Start from the conversation', ceStack(CE_T.s2, [
-            _ceGuideBar('', _ceWorldPickGuide()),
-            _ceGuide(_ceWorldPickGuide(), true),
-            ceBtn('Choose and write questions', 'world:pick', function() {
-                return ceBuildOp(function() { return ceWorldChoose(); })
-                    .then(function(msg: any) {
-                        try { api.v1.ui.toast(String(msg), { type: 'success', autoClose: 6000 }); } catch (_eW1) {}
-                        return cePublishBuild();
-                    });
-            }, undefined, 'Choosing\u2026'),
-            ceSub('t3', tally)
-        ])),
-        // The author's own question. Two boxes and a button, read through ceFieldLive and
-        // cleared through ceFieldSet [CHAT-SEND-LIVE] -- Add is a click and arrives before
-        // the blur that would commit either box.
-        // onCommit IS A NO-OP AND IS NOT OPTIONAL: ceField's blur handler calls p.onCommit
-        // unguarded whenever the text changed, so a field without one throws into ceAction's
-        // catch on every edit. These two boxes are read at the press, not at the blur.
-        ceGroup('Add your own', ceStack(CE_T.s2, [
-            _ceGuideBar('', _ceWorldAddGuide()),
-            _ceGuide(_ceWorldAddGuide(), true),
-            h(ceField, { k: 'world:new:label', label: 'Name', value: '',
-                placeholder: 'Money, The Sea, Who Is In Charge\u2026',
-                onCommit: function() { return Promise.resolve(); } }),
-            h(ceField, { k: 'world:new:helper', label: 'What belongs in it', value: '',
-                multiline: true, rows: 2,
-                placeholder: 'One line \u2014 it is what you will read here when the box is empty, and what the writer is told\u2026',
-                onCommit: function() { return Promise.resolve(); } }),
-            ceBtn('Add question', 'world:add', function() {
-                var lab = String(ceFieldLive('world:new:label') || '').trim();
-                var hlp = String(ceFieldLive('world:new:helper') || '').trim();
-                if (!lab) {
-                    try { api.v1.ui.toast('Give it a name first.', { type: 'error', autoClose: 2400 }); } catch (_eW3) {}
-                    return Promise.resolve();
-                }
-                ceFieldSet('world:new:label', '');
-                ceFieldSet('world:new:helper', '');
-                return ceBuildOp(function() { return ceWorldSecAdd(lab, hlp); })
-                    .then(cePublishBuild);
-            })
-        ]))
-        ])),
-        // [WORLD-EXTRACT] OUT OF THE FOLD AND UNDER IT, ALWAYS VISIBLE.
-        // It used to sit beside "Choose and write questions" inside band 2, on the argument
-        // that the two passes are used in order -- choosing narrows the set, extracting fills
-        // it. That reasoning was right about the FIRST run and wrong about every one after
-        // it: band 2 collapses the moment any question is asked, which is exactly when this
-        // button starts being the one you want. The two are used in order ONCE and then one
-        // of them is used forever.
-        // THEY ARE ALSO NOT THE SAME KIND OF ACTION. Choosing is setup -- it decides which
-        // questions exist, is run once, and belongs behind the fold with the rest of the
-        // setup. Extracting is the repeatable verb of this surface: talk, extract, read, talk
-        // again. Burying the repeatable one under the one-off is the error.
-        // ABOVE THE ANSWERS RATHER THAN BELOW THEM, because it is what fills them, and a
-        // control that writes into a list reads as belonging over that list.
-        asked ? ceStack(CE_T.s2, [
-            ceBtn('Write the blanks from the chat', 'world:extract', function() {
-                return ceBuildOp(function() { return ceWorldExtract(); })
-                    .then(function(msg: any) {
-                        try { api.v1.ui.toast(String(msg), { type: 'success', autoClose: 6000 }); } catch (_eW2) {}
-                        return cePublishBuild();
-                    });
-            }, undefined, 'Writing\u2026'),
-            ceSub('t3', 'Reads the conversation above and fills the questions you have left '
-                      + 'empty. It never touches one you have written.')
-        ]) : null,
-        // ── BAND 3 · THE WORK ──
-        // The question rows stay FIELD density: they are many fields of ONE record -- the
-        // world -- which is CE-STYLE 7.2 exactly. Object density is for the kind stages,
-        // where the rows are distinct things.
-        rows.length ? ceBand(3, 'Answer them',
-            { state: (answered && answered === asked) ? 'done' : 'open',
+        // [BUILD-COPY] What the stage produces and where it goes, in the preamble's two lines.
+        ceStagePreamble('Your world',
+            'Choose what your records look like, talk the story through, and the engine '
+            + 'writes down the facts every scene and every record will read.',
+            'Saving puts those facts in the story\u2019s Memory.'),
+        // \u2500\u2500 BAND 1 \u00b7 SETUP \u2500\u2500
+        ceBand(1, 'What your records look like',
+            { state: seen ? 'done' : 'open', openKey: seen ? 'band:world:setup' : '',
+              summary: String(nOn) + ' of ' + String(setupRows.length) + ' kinds built' },
+            ceStack(CE_T.s3, setupKids)),
+        // \u2500\u2500 BAND 2 \u00b7 TALK \u2500\u2500
+        ceBand(2, 'Talk it through', { state: wTurns ? 'open' : 'waiting' },
+            ceStack(CE_T.s2, [
+                (!wTurns && Number(st.premiseTurns) > 0) ? ceRow('An earlier conversation',
+                    ceSub('t3', String(st.premiseTurns) + ' turns from the old Premise stage'),
+                    ceBtn('Bring it in', 'world:adopt', function() {
+                        return ceBuildOp(function() { return ceBuildChatAdopt('premise', 'world'); })
+                            .then(function(msg: any) {
+                                try { api.v1.ui.toast(String(msg), { type: 'success', autoClose: 4000 }); } catch (_eAd) {}
+                                return cePublishBuild();
+                            });
+                    })) : null,
+                ceChatPanel('Conversation', wTurns,
+                    _ceBuildDock(st, 'world', String(st.worldBlock || CE_P_WORLD),
+                        'Tell me what your story is \u2014 one line is enough.',
+                        'What is your story?'))
+            ])),
+        // \u2500\u2500 BAND 3 \u00b7 THE WORLD CARD \u2500\u2500
+        ceBand(3, 'What is true of this world',
+            { state: (answered && answered === asked) ? 'done' : (wTurns ? 'open' : 'waiting'),
               count: String(answered) + '/' + String(asked) },
-            ceStack(CE_T.s4, rows)) : null,
-        // [WIZUI-PRIMARY] WIZUI 3.3: ONE PRIMARY ACTION PER SURFACE, and on S4 it is the
-        // projection into Memory -- "a novice can complete the entire pipeline by pressing
-        // the obvious button on each screen." The other three controls on this surface are
-        // secondary by omission; a second accent would make the rule say nothing.
-        // IT IS SAFE TO OFFER FOREVER because Memory is a projection (WORLDPIPE 3.2) and
-        // re-pressing it is idempotent. That is why the destructive-sounding half of the copy
-        // is a fold and the one-line consequence is not.
-        // [CHARTER-AN] It writes the Author's Note too, and the line says so: the Note is
-        // resolved from the charter's Voice tier, which this button is not the only writer of
-        // but is the one an author is looking at when the world changes.
+            ceStack(CE_T.s4, [
+                wTurns ? ceStack(CE_T.s2, [
+                    ceBtn('Write the blanks from the chat', 'world:extract', function() {
+                        return ceBuildOp(function() { return ceWorldExtract(); })
+                            .then(function(msg: any) {
+                                try { api.v1.ui.toast(String(msg), { type: 'success', autoClose: 6000 }); } catch (_eW2) {}
+                                return cePublishBuild();
+                            });
+                    }, undefined, 'Writing\u2026'),
+                    ceSub('t3', 'Reads the conversation and fills the empty questions. A '
+                              + 'question it never discussed stays empty. It never touches '
+                              + 'one you have written.')
+                ]) : ceProse('t3', 'Nothing to read yet. Once you have talked, the '
+                    + 'questions below are filled from what you said.'),
+                ceStack(CE_T.s4, rows),
+                ceGroup('Add your own', ceStack(CE_T.s2, [
+                    _ceGuideBar('', _ceWorldAddGuide()),
+                    _ceGuide(_ceWorldAddGuide(), true),
+                    h(ceField, { k: 'world:new:label', label: 'Name', value: '',
+                        placeholder: 'Money, The Sea, Who Is In Charge\u2026',
+                        onCommit: function() { return Promise.resolve(); } }),
+                    h(ceField, { k: 'world:new:helper', label: 'What belongs in it', value: '',
+                        multiline: true, rows: 2,
+                        placeholder: 'One line \u2014 it is what you will read here when the box is empty, and what the writer is told\u2026',
+                        onCommit: function() { return Promise.resolve(); } }),
+                    ceBtn('Add question', 'world:add', function() {
+                        var lab = String(ceFieldLive('world:new:label') || '').trim();
+                        var hlp = String(ceFieldLive('world:new:helper') || '').trim();
+                        if (!lab) {
+                            try { api.v1.ui.toast('Give it a name first.', { type: 'error', autoClose: 2400 }); } catch (_eW3) {}
+                            return Promise.resolve();
+                        }
+                        ceFieldSet('world:new:label', '');
+                        ceFieldSet('world:new:helper', '');
+                        return ceBuildOp(function() { return ceWorldSecAdd(lab, hlp); })
+                            .then(cePublishBuild);
+                    })
+                ]), 'world:addown')
+            ])),
+        // \u2500\u2500 BAND 4 \u00b7 SAVE \u2500\u2500
         ceBand(4, 'Save to the story', { state: answered ? 'open' : 'waiting' },
             ceStack(CE_T.s2, [
             _ceGuideBar('', _ceWorldSaveGuide()),
             _ceGuide(_ceWorldSaveGuide(), true),
-            ceSub('t3', 'Replaces the Memory block and the Author\u2019s Note region.'),
+            ceSub('t3', oldVoice ? 'Replaces the Memory block and the Author\u2019s Note region.'
+                                 : 'Replaces the Memory block.'),
             ceBtn('Save to Memory', 'world:commit', function() {
                 return ceBuildOp(function() {
                     return Promise.resolve(loadConfig()).then(function(fresh: any) {
@@ -70191,14 +70123,27 @@ function _ceBuildWorld(st: any): any {
                     });
                 }).then(function(ok: any) {
                     try {
-                        api.v1.ui.toast(ok ? 'Written into Memory and the Author\u2019s Note.'
-                                           : 'Could not write Memory.',
+                        api.v1.ui.toast(ok ? 'Written into Memory.' : 'Could not write Memory.',
                             { type: ok ? 'success' : 'error', autoClose: 2800 });
                     } catch (_eW4) {}
                     return cePublishBuild();
                 });
-            }, 'primary', 'Saving\u2026')
-        ]))
+            }, seen ? 'primary' : undefined, 'Saving\u2026')
+        ])),
+        // [RULES-RETIRED] THE OLD TIERS, ONLY WHERE A STORY HAS THEM. Nothing writes them any
+        // more; a story built before 3.14.12 keeps both, still reads them (Rules in every
+        // Build head and the profile generators, Voice in the Author's Note), and edits or
+        // empties them here. [CHARTER-TIER-NAMES] The keys stay `style` and `play`.
+        (oldRules || oldVoice) ? ceGroup('Earlier: Rules and Voice', ceStack(CE_T.s3, [
+            ceProse('t3', 'Written by the old Charter stage. Rules still rides every '
+                + 'generation this tool makes, and Voice still writes the Author\u2019s Note. '
+                + 'Empty a box to stop it.'),
+            _ceBuildCharterTier('Rules', 'Stamped onto every place, person and group this tool writes.',
+                'style', oldRules),
+            _ceBuildCharterTier('Voice', 'Goes to the story through the Author\u2019s Note.',
+                'play', oldVoice)
+        ]), 'build:oldcharter') : null,
+        _ceBuildHeadPreview(c, _ceOpenIs('build:head'))
     ]);
 }
 
@@ -71304,28 +71249,6 @@ function _ceBuildScope(st: any, openMap: any): any {
 
 }
 
-// -- Premise stage  [BUILD-CHAT] ----------------------------------------------
-// [EMPTY-LEDE] The empty state is a LEDE above the dock, never ceEmpty() in its place: this
-// surface is the only way to start the conversation it is empty of.
-function _ceBuildPremise(st: any): any {
-    var turns: any[] = st.turns || [];
-    return ceStack(CE_T.s2, [
-        ceStagePreamble('Premise',
-            'Say what your story is \u2014 a genre, an image, one line, whatever you have '
-            + '\u2014 and we work it out together in the conversation below.',
-            'Everything after this reads what you settle here. Nothing is written to your '
-            + 'story yet.'),
-        turns.length ? null : ceProse('t3',
-            'There is no wrong first sentence. \u201cA heist, but underwater\u201d is '
-            + 'enough to start from.'),
-        ceBand(1, 'Talk it through', { state: turns.length ? 'open' : 'waiting' },
-            ceChatPanel('Conversation', turns.length,
-                _ceBuildDock(st, 'premise', CE_P_PREMISE,
-                    'Tell me what your story is \u2014 one line is enough.',
-                    'What is your story?')))
-    ]);
-}
-
 // -- Root ---------------------------------------------------------------------
 function _ceBuildRoot(): any {
     ceBuildStoreInit();
@@ -71343,18 +71266,16 @@ function _ceBuildRoot(): any {
     if (!st || !st.ready) {
         return ceScreen(ceHeader(back), ceEmpty('Loading\u2026', null));
     }
-    var stage = String(st.stage || 'charter');
+    var stage = String(st.stage || 'world');
     return ceScreen(ceHeader(back), ceStack(CE_T.s4, [
         _ceBuildSpine(stage),
         // [TABBODY-RECYCLE] The stage body carries its own key, or two stages that render
         // the same shape are matched by position and carry each other's values across a
         // stage change.
         h('div', { key: 'bstage:' + stage },
-            stage === 'premise' ? _ceBuildPremise(st)
-          : stage === 'world'   ? _ceBuildWorld(st)
-          : stage === 'open'    ? _ceBuildOpening(st)
+            stage === 'open'    ? _ceBuildOpening(st)
           : ceBuildKind(stage)  ? _ceBuildScope(st, openMap)
-          : _ceBuildCharter(st)),
+          : _ceBuildWorld(st)),
     ]));
 }
 
@@ -73500,6 +73421,19 @@ async function loadBuildChat(scope: string): Promise<BuildChat> {
              updatedAt: Number(c.updatedAt) || 0 };
 }
 
+// [TALK-ONE] The earlier Premise conversation, copied in front of an empty World one. Copied,
+// not moved: the old transcript stays readable through Export until the story is done with it.
+async function ceBuildChatAdopt(from: string, to: string): Promise<string> {
+    var dst = await loadBuildChat(String(to));
+    if (dst.turns.length) return 'This conversation already has turns; nothing was copied.';
+    var src = await loadBuildChat(String(from));
+    if (!src.turns.length) return 'There was nothing to bring in.';
+    dst.turns = JSON.parse(JSON.stringify(src.turns));
+    await saveBuildChat(dst);
+    return String(dst.turns.length) + ' turn' + (dst.turns.length === 1 ? '' : 's')
+         + ' brought in. Carry on from where it left off.';
+}
+
 async function saveBuildChat(c: BuildChat): Promise<void> {
     try {
         var all = await loadBuildChats();
@@ -73570,53 +73504,6 @@ function _ceChatFileName(title: string): string {
     var t = String(title || 'chat').replace(/[^A-Za-z0-9 _-]/g, '').replace(/\s+/g, '-');
     if (!t) t = 'chat';
     return 'ce-chat-' + t.toLowerCase().substring(0, 40) + '.json';
-}
-
-// [CHARTER-COMPRESS] EXTRACTION REUSES THE CHAT'S EXACT PREFIX AND APPENDS ONE MESSAGE.
-// That is the whole reason two compressions are affordable: the [system, ...turns] array is
-// already warm from the conversation itself, so each tier pays only for its own instruction.
-// Building a fresh context blob here instead would be 100% uncached and cost more than the
-// conversation did.
-// SEQUENTIAL, NOT Promise.all. Two concurrent calls interleave against one budget and the
-// second one's failure would be indistinguishable from the first one's.
-async function ceCompressCharter(): Promise<string> {
-    var chat = await loadBuildChat('premise');
-    if (!chat.turns.length) return 'Nothing to read yet \u2014 talk it through first.';
-    var base = await ceBuildChatMessages('premise', CE_P_PREMISE, chat.turns);
-    var model = ceUtilityModel();   // [UTIL-PIN] the utility channel, never the story's model
-    var params: any = { model: model, max_tokens: 400, temperature: 0.8, enable_thinking: false };
-    var tiers: any[] = [
-        { key: 'style', label: 'Rules', ask: CE_P_STYLE_TIER },
-        { key: 'play',  label: 'Voice', ask: CE_P_PLAY_TIER }
-    ];
-    var failed: string[] = [];
-    var wrote = 0;
-    for (var i = 0; i < tiers.length; i++) {
-        var msgs = base.slice(0);
-        msgs.push({ role: 'user', content: CE_P_COMPRESS_WARN + '\n\n' + tiers[i].ask });
-        try {
-            var res: any = await aeDiagGenerateWithStory('charter:' + tiers[i].key, msgs, params,
-                                                         undefined, undefined, 'background');
-            var out = ceGenText(res);
-            if (!out || out.toLowerCase() === 'none') { failed.push(tiers[i].label); continue; }
-            await ceCharterWrite(tiers[i].key, out);
-            wrote++;
-        } catch (eCc) {
-            // [GEN-FAIL-KIND] A transport failure stops the run rather than writing the
-            // second tier over a first one that never arrived. A model failure is counted
-            // and the other tier still gets its turn.
-            api.v1.error('[AE:charter] compress failed:', eCc);
-            if (_ceGenFailKind(eCc) === 'transport') {
-                return 'The call did not reach the model. '
-                     + (wrote ? 'Style was written; Voice was not. ' : 'Nothing was written. ')
-                     + 'Try again in a moment.';
-            }
-            failed.push(tiers[i].label);
-        }
-    }
-    if (!wrote) return 'Neither tier came back usable. Try again, or write them yourself.';
-    if (failed.length) return failed.join(' and ') + ' did not come back \u2014 press again to retry.';
-    return 'Charter written. Read it over before you build on it.';
 }
 
 // [GEN-THINK] ONE READER FOR EVERY GENERATION THIS PIPELINE MAKES, because a reasoning model
@@ -73716,17 +73603,6 @@ async function ceWorldQuestions(): Promise<any[]> {
     return out;
 }
 
-// [WORLD-PICK] WHICH QUESTIONS THIS STORY ANSWERS, decided from the Premise conversation.
-// IT READS PREMISE, NOT WORLD. The choice is about what KIND of story this is, which is what
-// the premise chat is for; the world chat is where the chosen questions get answered, so
-// reading it here would ask the author to have already done the thing this pass exists to
-// start.
-// IT NEVER SWITCHES OFF A QUESTION THAT HAS TEXT IN IT. A pass that silently discarded an
-// answer would make the button unusable a second time, which is exactly when an author
-// presses it -- after the conversation moved on.
-// IT IS A STARTING POINT, NOT A VERDICT. Every question it touches has its switch on the
-// same screen, so the result is visible and one tap from reversible. That is what buys the
-// right to apply it directly instead of building a confirmation surface for it.
 // [FIELD-MINT] The pass. It rides the SCOPE CHAT's exact prefix, on EXTRACT-HANDOFF's rule:
 // the conversation about what these are is the only place the answer lives, and reusing its
 // prefix is what makes the call cheap. The family switch rides the ask, not the head.
@@ -73765,8 +73641,8 @@ async function ceFieldMint(kind: string, chatScope: string, chatBlock: string): 
                                          chat.turns);
     msgs.push({ role: 'user', content: ask });
     var model = ceUtilityModel();   // [UTIL-PIN] the utility channel, never the story's model
-    // 0.7, the extraction row, for ceWorldChoose's stated reason: this pass reads AND
-    // invents, so a colder read writes the obvious question and mints nothing.
+    // 0.7, the extraction row: this pass reads AND invents, so a colder read writes the
+    // obvious question and mints nothing.
     var params: any = { model: model, max_tokens: 320, temperature: 0.7, enable_thinking: false };
     var out = '';
     try {
@@ -73780,8 +73656,7 @@ async function ceFieldMint(kind: string, chatScope: string, chatBlock: string): 
             : 'The model returned nothing usable. Nothing was changed.';
     }
 
-    // Parse first, write second, on ceWorldChoose's rule: a half-applied schema change is
-    // worse than none.
+    // Parse first, write second: a half-applied schema change is worse than none.
     var adds: any[] = [];
     var raw: string[] = out.split('\n');
     for (var r = 0; r < raw.length; r++) {
@@ -73963,109 +73838,6 @@ async function ceOpeningPlace(): Promise<string> {
         + ' added to the end of the story. It is still here if you want it again.';
 }
 
-async function ceWorldChoose(): Promise<string> {
-    var chat = await loadBuildChat('premise');
-    if (!chat.turns.length) {
-        return 'Nothing to read yet \u2014 talk your story through in Premise first.';
-    }
-    var qs = await ceWorldQuestions();
-    if (!qs.length) return 'There are no questions to choose from.';
-
-    var lines: string[] = [];
-    var known: any = {};
-    for (var i = 0; i < qs.length; i++) {
-        var q: any = qs[i];
-        known[String(q.id)] = true;
-        // [WORLD-PICK-ANSWERED] THE PASS COULD NOT SEE WHAT WAS ALREADY WRITTEN. Its own
-        // header says it is safe to press twice -- the code refuses to switch off a question
-        // holding text -- but that guard is on the WRITE side only, and the model was handed
-        // an undifferentiated list. So a second run spent its mint budget proposing new
-        // questions for ground an existing answer already covers, and had no way to know
-        // which of the listed questions were live. Marking them costs one word per line and
-        // rides an ask that is rebuilt every press anyway.
-        lines.push(String(q.id) + ' | ' + String(q.label || '') + ' | ' + ceWorldHelper(q)
-                   + (String(q.content || '').trim() ? '  [ALREADY ANSWERED]' : ''));
-    }
-    var ask = CE_P_WORLD_PICK + lines.join('\n') + CE_P_WORLD_PICK_TAIL;
-
-    var msgs = await ceBuildChatMessages('premise', CE_P_PREMISE, chat.turns);
-    msgs.push({ role: 'user', content: ask });
-    var model = ceUtilityModel();   // [UTIL-PIN] the utility channel, never the story's model
-    // [P-SUBSTRATE] 0.7 is PROMPTS 5's extraction row -- reading a transcript, not
-    // inventing. This pass does both, so it does not drop below it: a colder read picks the
-    // obvious questions and mints nothing.
-    var params: any = { model: model, max_tokens: 400, temperature: 0.7, enable_thinking: false };
-    var out = '';
-    try {
-        var res: any = await aeDiagGenerateWithStory('world:pick', msgs, params,
-                                                     undefined, undefined, 'background');
-        out = ceGenText(res);
-    } catch (eWp) {
-        api.v1.error('[AE:world] choose failed:', eWp);
-        return _ceGenFailKind(eWp) === 'transport'
-            ? 'The call did not reach the model. Nothing was changed \u2014 try again in a moment.'
-            : 'The model returned nothing usable. Nothing was changed.';
-    }
-
-    // Parse first, write second. A half-applied selection is worse than none, and the empty
-    // parse is a real outcome rather than an error: it means the reply was unusable.
-    var keep: any = {};
-    var adds: any[] = [];
-    var raw: string[] = out.split('\n');
-    for (var r = 0; r < raw.length; r++) {
-        var line = ceStripThink(String(raw[r] || ''));
-        if (!line) continue;
-        if (line.charAt(0) === '+') {
-            var rest = line.substring(1).trim();
-            var bar = rest.indexOf('|');
-            var nm = (bar >= 0 ? rest.substring(0, bar) : rest).trim();
-            var hp = (bar >= 0 ? rest.substring(bar + 1) : '').trim();
-            if (nm && adds.length < CE_WORLD_PICK_ADD_MAX) adds.push({ label: nm, helper: hp });
-            continue;
-        }
-        // A bare id, or an id at the head of a line the model decorated anyway.
-        var tok = line.split(/[\s|,]+/)[0];
-        if (known[tok]) keep[tok] = true;
-    }
-    var picked = 0;
-    var kk: string;
-    for (kk in keep) { picked++; }
-    if (!picked && !adds.length) {
-        return 'The reply named no questions. Nothing was changed \u2014 try again.';
-    }
-    // [CE_WORLD_ALWAYS] Forced on after the parse, never offered to the model to drop.
-    for (var a = 0; a < CE_WORLD_ALWAYS.length; a++) {
-        if (known[CE_WORLD_ALWAYS[a]]) keep[CE_WORLD_ALWAYS[a]] = true;
-    }
-
-    var on = 0; var off = 0; var kept = 0;
-    for (var w = 0; w < qs.length; w++) {
-        var s: any = qs[w];
-        var sid = String(s.id);
-        var want = !!keep[sid];
-        var hasText = !!String(s.content || '').trim();
-        if (!want && hasText) { kept++; continue; }   // answered questions are never dropped
-        if (!!s.enabled === want) continue;
-        await ceWorldSecWrite(sid, { enabled: want });
-        if (want) { on++; } else { off++; }
-    }
-    var added = 0;
-    for (var d = 0; d < adds.length; d++) {
-        var nid = await ceWorldSecAdd(adds[d].label, adds[d].helper);
-        if (nid) added++;
-    }
-
-    var msg = 'Questions chosen.';
-    if (on) msg += ' ' + String(on) + ' switched on.';
-    if (off) msg += ' ' + String(off) + ' left out.';
-    if (added) {
-        msg += ' ' + String(added) + ' new question' + (added === 1 ? '' : 's')
-             + ' written for this story.';
-    }
-    if (kept) msg += ' ' + String(kept) + ' kept because ' + (kept === 1 ? 'it was' : 'they were') + ' already answered.';
-    return msg + ' Change any of them below.';
-}
-
 // [WORLD-EXTRACT] THE ANSWERS, WRITTEN FROM THE WORLD CONVERSATION.
 // BLANKS ONLY, AND ONLY WHERE THE QUESTION IS SWITCHED ON. This is the non-destructive twin
 // of the charter's Write button: that one overwrites two fields the author is looking at,
@@ -74082,10 +73854,23 @@ async function ceWorldExtract(): Promise<string> {
     }
     var qs = await ceWorldQuestions();
     var todo: any[] = [];
+    // [WORLD-NONE-AT] A QUESTION THAT CAME BACK BLANK IS NOT ASKED AGAIN UNTIL THERE IS MORE
+    // TO READ. With every default asked, most blanks are blank because the conversation has
+    // not reached them, and re-asking each one on every press spends the allowance to be told
+    // the same thing. Re-roll still asks one on demand.
+    var turnsN = chat.turns.length;
+    var waiting = 0;
     for (var i = 0; i < qs.length; i++) {
-        if (qs[i] && qs[i].enabled && !String(qs[i].content || '').trim()) todo.push(qs[i]);
+        if (!qs[i] || !qs[i].enabled || String(qs[i].content || '').trim()) continue;
+        var na = Number(qs[i].noneAt) || 0;
+        if (na && na >= turnsN) { waiting++; continue; }
+        todo.push(qs[i]);
     }
-    if (!todo.length) return 'Every switched-on question already has an answer.';
+    if (!todo.length) {
+        return waiting
+            ? 'Nothing new has been said since the blanks were last read. Talk some more, or re-roll one.'
+            : 'Every switched-on question already has an answer.';
+    }
 
     var base = await ceBuildChatMessages('world', await ceWorldChatBlock(), chat.turns);
     var model = ceUtilityModel();   // [UTIL-PIN] the utility channel, never the story's model
@@ -74102,7 +73887,11 @@ async function ceWorldExtract(): Promise<string> {
             var outT = await _ceWorldExtractOne(base, params, q,
                                                 ceWorldOtherAnswers(qs, String(q.id)));
             if (outT === null) { relapsed++; continue; }
-            if (!outT) { silent++; continue; }
+            if (!outT) {
+                silent++;
+                await ceWorldSecWrite(String(q.id), { noneAt: turnsN });   // [WORLD-NONE-AT]
+                continue;
+            }
             await ceWorldSecWrite(String(q.id), { content: outT });
             q.content = outT;
             wrote++;
@@ -76543,7 +76332,8 @@ function _ceBenchWorldRun(qid: string): Promise<any> {
     for (var i = 0; i < qs.length; i++) { if (String(qs[i].id) === qid) { q = qs[i]; break; } }
     if (!q) return Promise.reject(new Error('no fixture question ' + qid));
     var head = ceBuildHead({ family: 'chat', world: ceWorldSpanFrom('', qs) });
-    var base = ceBuildChatMessagesFrom(head, ceWorldChatBlockFrom(qs), CE_BENCH_WORLD_TURNS);
+    var base = ceBuildChatMessagesFrom(head, ceWorldChatBlockFrom(qs, _ceBuildKindLabels(null)),
+                                       CE_BENCH_WORLD_TURNS);
     return _ceWorldExtractOne(base, ceWorldExtractParams(), q,
                               ceWorldOtherAnswers(qs, String(q.id))).then(function(out: any) {
         var raw = _ceWorldExtractRaw.join('\n\n--- repair ---\n\n');
