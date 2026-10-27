@@ -1,6 +1,6 @@
 # CE-INDEX
 
-Engine: 3.14.13
+Engine: 3.14.14
 
 The grep directory for `character-engine.naiscript`: subject, token, the rule in one line. The reasoning lives at the code under each token -- `grep '\[TOKEN\]'` finds it. This file is a locator, not a second copy of the comments; a line that grows into an explanation should move to its site.
 
@@ -241,6 +241,10 @@ Update this file in the same patch as any change it describes.
 - `TALK-ONE` -- ONE conversation for the story and its world: Premise and Charter are gone and World is the first stage; an earlier Premise transcript is offered once (ceBuildChatAdopt)
 - `BUILD-SETUP` -- which kinds this story builds and what each is asked, on charter.kinds / charter.shapes; a kind switched off is gone from the picker, both spines and the stage resolver (_ceBuildStagesShown). The one band above Talk, because the conversation is told what it gathers for
 - `RULES-RETIRED` -- the Rules and Voice tiers are no longer written from a conversation; a story that has them keeps reading them and edits them in the "Earlier" fold. Premise and Hard rules were already questions; Names and Off limits are new ones
+- `PLAN` -- the Plan stage (CE-BUILD2 3.3-3.4): one press reads the World conversation into rows, one press makes every ticked row. Rows are WizardDrafts with fields.plan = '1'; loadWizardDraftsOfKind hides them from the kind stages until they are records. Left-out things are kind 'planleft'
+- `PLAN-CHAIN` -- the ask is a decision chain per thing (SAID, then SETTLED, then KIND, then NAME, COUNT, INSIDE, SCALE, LINE), every arm written, examples in pairs that look alike and differ
+- `PLAN-CODE` -- code checks every value against the closed lists, matches names to records (shown unticked), expands COUNT into rows and applies the SCALE default; all rejections go back in ONE retry with the reply as an assistant turn
+- `PLAN-LINK` -- what INSIDE becomes is a lookup on the pair of kinds: place/place and group/group parentId, character/group factionId, character/place homeLocationId, object/character-or-place parentId; anything else links nothing
 - `WORLD-NONE-AT` -- a question that came back blank is not asked again until the transcript grows; re-roll still asks one on demand
 - `WORLD-PICK` -- WHICH QUESTIONS A STORY ANSWERS IS `enabled`, a field that has gated assembleWizardMemory since WIZARD-2
 - `WORLD-EXTRACT` -- the answers, from the WORLD chat: blanks only, switched-on only, one call per question; "Write the blanks" sits BELOW band 2 rather than inside it: band 2 collapses once any question is asked, which is when this button starts mattering
@@ -582,6 +586,7 @@ Update this file in the same patch as any change it describes.
 - `BENCH-TRANSPORT` -- each test uses its prompt's own transport. The world suite goes through generateWithStory and is run in an empty story
 - `BENCH-INFRA` -- a transport failure stops the test and is reported apart from the count; it is not a failing run
 - `BENCH-PACE` -- a budget wall is waited out (polled, capped, Stop honoured) and the same run tried again, so every count is out of 20
+- `BENCH-SHARE` -- tests on one fixture read the same reply: run n of each test is run n of the pass, so the Plan suite costs one pass per run, cleared when a test or suite starts
 - `STORAGE_BENCH` -- tempStorage `ce_bench_v1`: this session's counts. They leave through Export and never touch the story file
 
 ## Measured platform facts
