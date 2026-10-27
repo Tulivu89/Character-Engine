@@ -1,6 +1,6 @@
 # CE-INDEX
 
-Engine: 3.14.10
+Engine: 3.14.12
 
 The grep directory for `character-engine.naiscript`: subject, token, the rule in one line. The reasoning lives at the code under each token -- `grep '\[TOKEN\]'` finds it. This file is a locator, not a second copy of the comments; a line that grows into an explanation should move to its site.
 
@@ -182,7 +182,7 @@ Update this file in the same patch as any change it describes.
 - `BUILD-CHAT-ONE` -- the chat address is resolved ONCE, in cePublishBuild, and stored. A second derivation is not fixed by making the two agree
 - `DESC-MEANS` -- THE ALWAYS-ON DESCRIPTION LINE IS NOT A SUMMARY FOR EVERY KIND. Every staged row has a `description`: written by the seed pass's SUMMARY line
 - `NAV-TAB-REMEMBERED` -- ONE SLOT PER SURFACE, NOT ONE SLOT QUALIFIED BY SURFACE. The qualified single slot stopped one surface reading another's tab -- the bug NAV-TAB- QUALIFIED was
-- `FIELD-MINT` -- WRITING THE QUESTIONS, not answering them -- WORLD-PICK-ADD one level down
+- `FIELD-MINT` -- WRITING THE QUESTIONS, not answering them: the questions a record of this kind is asked, minted into its field library
 - `FIELD-MINT-DOOR` -- the questions group decides what is IN the author's set, not WHICH set is asked; not the second editor SHAPE-ASKS forbids
 - `ROW-RETAIN-COUNT` -- the top-up counts UNSTAMPED drafts; the queue and the count must mean the same thing
 - `SHAPE-ASKS` -- THE SHAPE PICKS THE QUESTIONS AND THERE IS NO SECOND EDITOR. The profile's own three-way moves onto the SCALE, where a rung is one question set by construction
@@ -190,7 +190,7 @@ Update this file in the same patch as any change it describes.
 - `PASS-KIND` -- every pass takes a `kind` and defaults it to 'location'. Delete the default once every stage is on
 - `BUILD-BANDS` -- FIVE BANDS, ONE ORDER, EVERY STAGE: where you are, talk, set up, the work, what exists
 - `BUILD-BANDS-SETUP` -- set-up is ABOVE the work and collapses once answered; a thing that decides what a row is asked cannot sit under the row
-- `BUILD-BANDS-TALK` -- talk is second, above set-up, on all ten stages, so the order learned on one is right on the next
+- `BUILD-BANDS-TALK` -- talk is above set-up on every kind stage, so the order learned on one is right on the next. The World stage is the one exception [BUILD-SETUP]
 - `BUILD-STEPS` -- ceStepTrack DRAWS THE PROGRESSION. add -> name -> seed -> commit is four acts and the only signal was a button label changing IN PLACE
 - `CHAT-PANEL` -- the dock HAD NO EDGES -- it paints its own ground and grows to 46vh inline with no rule above or below, and closed
 - `BUILD-COPY` -- every stage states WHAT IT PRODUCES and where that goes, via ceStagePreamble's three REQUIRED parts -- which is the only durable answer to a surface whose whole
@@ -218,8 +218,7 @@ Update this file in the same patch as any change it describes.
 - `CHARTER-AN` -- the Voice tier IS the Author's Note, per WORLDPIPE 3.1, and ceCommitAuthorNote is the ONE site that writes the managed region
 - `WIZUI-GUIDE` -- WIZUI 3.2 -- no permanent paragraph of instruction on a pipeline surface
 - `WIZUI-PRIMARY` -- WIZUI 3.3 -- one accented control per surface
-- `CHARTER-TIER-NAMES` -- the tiers READ as Rules and Voice and are STORED as `style` and `play`. Rules is stamped on every generation; Voice reaches the Author's Note and no generator
-- `CHARTER-COMPRESS` -- two calls, one per tier, appended to the premise chat's EXACT prefix
+- `CHARTER-TIER-NAMES` -- the tiers READ as Rules and Voice and are STORED as `style` and `play`. Rules is stamped on every generation; Voice reaches the Author's Note and no generator. Nothing writes either tier since 3.14.12 [RULES-RETIRED]
 - `CHARTER-CANON-NONE` -- there is no third tier. canon IS the world profile's answers, projected; a compression call for it would be a second writer of one artifact
 - `P-SUBSTRATE` -- the cached head, ordered by VOLATILITY and never by topic
 - `P-STYLE-ABOVE-NAMING` -- PROMPTS 22.1 closed: style tier ABOVE. The volatility case for the other order pays nothing because a session is one story
@@ -236,8 +235,11 @@ Update this file in the same patch as any change it describes.
 - `BUILD-CHAT-FAILKIND` -- a failed turn is written INTO the transcript with its reason
 - `CHAT-DOTS` -- the waiting bubble
 - `BUILD-WORLD` -- the world profile's questions ARE cfg.wizardSections -- already the question set, already editable, already what assembleWizardMemory projects into Memory
+- `TALK-ONE` -- ONE conversation for the story and its world: Premise and Charter are gone and World is the first stage; an earlier Premise transcript is offered once (ceBuildChatAdopt)
+- `BUILD-SETUP` -- which kinds this story builds and what each is asked, on charter.kinds / charter.shapes; a kind switched off is gone from the picker, both spines and the stage resolver (_ceBuildStagesShown). The one band above Talk, because the conversation is told what it gathers for
+- `RULES-RETIRED` -- the Rules and Voice tiers are no longer written from a conversation; a story that has them keeps reading them and edits them in the "Earlier" fold. Premise and Hard rules were already questions; Names and Off limits are new ones
+- `WORLD-NONE-AT` -- a question that came back blank is not asked again until the transcript grows; re-roll still asks one on demand
 - `WORLD-PICK` -- WHICH QUESTIONS A STORY ANSWERS IS `enabled`, a field that has gated assembleWizardMemory since WIZARD-2
-- `WORLD-PICK-ADD` -- the pick also MINTS questions, capped by CE_WORLD_PICK_ADD_MAX, and the surface says so
 - `WORLD-EXTRACT` -- the answers, from the WORLD chat: blanks only, switched-on only, one call per question; "Write the blanks" sits BELOW band 2 rather than inside it: band 2 collapses once any question is asked, which is when this button starts mattering
 - `WORLD-HELPER` -- two audiences, two fields
 - `BUILD-CHAT-EDIT` -- a bubble is tappable and both roles are editable, because the transcript IS the prompt -- a bad reply left in it steers every later call
@@ -494,7 +496,6 @@ Update this file in the same patch as any change it describes.
 - `DOCK-PRESS` -- Send with an empty box asks it to go on. The directive is transient, never a stored turn
 - `DOCK-REGEN` -- offered on the tapped LAST reply only, behind the same tap edit and delete already live behind
 - `MEM-HEAD` -- ATTG and Style target MEMORY and lead the block; assembleWizardMemory emits an already-bracketed body verbatim so the tag line is not given a heading
-- `WORLD-PICK-ANSWERED` -- the chooser is shown which questions already hold text, so a second press does not mint a new question for ground that is taken
 - `WORLD-QLIST` -- CE_P_WORLD promised "a fixed set of questions, listed below" and nothing was ever listed
 - `WORLD-NO-ECHO` -- each world question is a separate call reading one transcript, blind to the others
 - `P-WORLD-SPAN` -- THE WORLD SITS ABOVE THE FAMILY SPLIT in ceBuildHead, so all four utility channels -- chat, name, seed
@@ -577,6 +578,7 @@ Update this file in the same patch as any change it describes.
 - `BENCH-FIXTURE` -- fixtures use nouns no story uses and are never lifted from a failing input; each pair differs by ONE fact
 - `BENCH-TRANSPORT` -- each test uses its prompt's own transport. The world suite goes through generateWithStory and is run in an empty story
 - `BENCH-INFRA` -- a transport failure stops the test and is reported apart from the count; it is not a failing run
+- `BENCH-PACE` -- a budget wall is waited out (polled, capped, Stop honoured) and the same run tried again, so every count is out of 20
 - `STORAGE_BENCH` -- tempStorage `ce_bench_v1`: this session's counts. They leave through Export and never touch the story file
 
 ## Measured platform facts

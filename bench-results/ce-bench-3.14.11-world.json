@@ -1,0 +1,234 @@
+{
+  "ce": "bench",
+  "version": 1,
+  "exportedAt": 1793119023442,
+  "runsPerTest": 20,
+  "results": {
+    "world:settled": {
+      "suite": "world",
+      "test": "settled",
+      "label": "A settled question",
+      "contract": "A question the conversation settled is answered from what the author said: the answer names the abbey and the wax.",
+      "runs": [
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "Read as: The sisters' mother swore an oath to the old abbey that all their wax would go to its candles. The abbey burned down forty years ago, but the sisters keep the oath anyway.\n\nSAID:\nTheir mother swore an oath to the old abbey that every scrap of wax would go to its candles.\nThe abbey burned down forty years ago.\nThey keep the oath anyway.\n\nANSWER:\nThe sisters' mother swore an oath to the old abbey that all their wax would go to its candles. The abbey burned down forty years ago, but the sisters keep the oath anyway."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "Read as: The sisters' mother swore an oath to the old abbey that every scrap of their wax would go to its candles. They keep the oath even though the abbey is gone, storing the accumulating wax in their cellar.\n\nSAID:\nTheir mother swore an oath to the old abbey that every scrap of wax would go to its candles.\nThey keep the oath anyway and store the wax in the cellar, where it has been piling up ever since.\n\nANSWER:\nThe sisters' mother swore an oath to the old abbey that every scrap of their wax would go to its candles. They keep the oath even though the abbey is gone, storing the accumulating wax in their cellar."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "Read as: The family swore an oath to the old abbey that every scrap of wax would go to its candles. The abbey burned down forty years ago, but they keep the oath anyway, storing the wax in the cellar where it has been piling up ever since.\n\nSAID:\nTheir mother swore an oath to the old abbey that every scrap of wax would go to its candles.\nThe abbey burned down forty years ago.\nThey keep the oath anyway and store the wax in the cellar, where it has been piling up ever since.\n\nANSWER:\nThe family swore an oath to the old abbey that every scrap of wax would go to its candles. The abbey burned down forty years ago, but they keep the oath anyway, storing the wax in the cellar where it has been piling up ever since."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "Read as: The sisters' mother swore an oath to the old abbey that every scrap of wax would go to its candles. The abbey burned down forty years ago, but the sisters keep the oath anyway, storing the accumulating wax in the cellar.\n\nSAID:\nTheir mother swore an oath to the old abbey that every scrap of wax would go to its candles.\nThe abbey burned down forty years ago.\nThey keep the oath anyway and store the wax in the cellar, where it has been piling up ever since.\n\nANSWER:\nThe sisters' mother swore an oath to the old abbey that every scrap of wax would go to its candles. The abbey burned down forty years ago, but the sisters keep the oath anyway, storing the accumulating wax in the cellar."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "Read as: The sisters' mother swore an oath to the old abbey that every scrap of wax would go to its candles. The abbey burned down forty years ago, but the sisters keep the oath anyway. They store the wax in the cellar, where it has been piling up ever since.\n\nSAID:\nTheir mother swore an oath to the old abbey that every scrap of wax would go to its candles.\nThe abbey burned down forty years ago.\nThey keep the oath anyway and store the wax in the cellar, where it has been piling up ever since.\n\nANSWER:\nThe sisters' mother swore an oath to the old abbey that every scrap of wax would go to its candles. The abbey burned down forty years ago, but the sisters keep the oath anyway. They store the wax in the cellar, where it has been piling up ever since."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "Read as: The sisters' mother swore an oath to the old abbey that every scrap of wax would go to its candles. The abbey burned down forty years ago, but the sisters keep the oath anyway. They store the wax in the cellar, where it has been piling up ever since.\n\nSAID:\nTheir mother swore an oath to the old abbey that every scrap of wax would go to its candles.\nThe abbey burned down forty years ago.\nThey keep the oath anyway and store the wax in the cellar, where it has been piling up ever since.\n\nANSWER:\nThe sisters' mother swore an oath to the old abbey that every scrap of wax would go to its candles. The abbey burned down forty years ago, but the sisters keep the oath anyway. They store the wax in the cellar, where it has been piling up ever since."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "Read as: The family is sworn to an oath their mother made to the old abbey, that every scrap of wax would go to its candles. The abbey burned down forty years ago, but they keep the oath anyway. Keeping it costs them the value of the wax, which they store in the cellar, where it has been piling up ever since.\n\nSAID:\nTheir mother swore an oath to the old abbey that every scrap of wax would go to its candles.\nThe abbey burned down forty years ago.\nThey keep the oath anyway and store the wax in the cellar, where it has been piling up ever since.\n\nANSWER:\nThe family is sworn to an oath their mother made to the old abbey, that every scrap of wax would go to its candles. The abbey burned down forty years ago, but they keep the oath anyway. Keeping it costs them the value of the wax, which they store in the cellar, where it has been piling up ever since."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "Read as: The family has sworn an oath to the old abbey that every scrap of their wax will go to its candles. Keeping it costs them the ability to sell the wax, which they store in the cellar where it has been piling up for forty years.\n\nSAID:\nTheir mother swore an oath to the old abbey that every scrap of wax would go to its candles.\nThey keep the oath anyway and store the wax in the cellar, where it has been piling up ever since.\n\nANSWER:\nThe family has sworn an oath to the old abbey that every scrap of their wax will go to its candles. Keeping it costs them the ability to sell the wax, which they store in the cellar where it has been piling up for forty years."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "Read as: The sisters' mother swore an oath to the old abbey that every scrap of wax would go to its candles. They keep the oath, storing the wax in the cellar where it has been piling up for forty years.\n\nSAID:\nTheir mother swore an oath to the old abbey that every scrap of wax would go to its candles.\nThey keep the oath anyway and store the wax in the cellar, where it has been piling up ever since.\n\nANSWER:\nThe sisters' mother swore an oath to the old abbey that every scrap of wax would go to its candles. They keep the oath, storing the wax in the cellar where it has been piling up for forty years."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "Read as: The sisters' mother swore an oath to the old abbey that every scrap of their wax would go to its candles. They keep the oath, storing the accumulating wax in their cellar.\n\nSAID:\nTheir mother swore an oath to the old abbey that every scrap of wax would go to its candles.\nThey keep the oath anyway and store the wax in the cellar, where it has been piling up ever since.\n\nANSWER:\nThe sisters' mother swore an oath to the old abbey that every scrap of their wax would go to its candles. They keep the oath, storing the accumulating wax in their cellar."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "Read as: The sisters' mother swore an oath to the old abbey that every scrap of wax would go to its candles. They keep the oath, storing the wax in their cellar where it has been piling up for forty years.\n\nSAID:\nTheir mother swore an oath to the old abbey that every scrap of wax would go to its candles.\nThey keep the oath anyway and store the wax in the cellar, where it has been piling up ever since.\n\nANSWER:\nThe sisters' mother swore an oath to the old abbey that every scrap of wax would go to its candles. They keep the oath, storing the wax in their cellar where it has been piling up for forty years."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "Read as: The family is sworn to an oath made by their mother to the old abbey, which requires that every scrap of their beeswax goes to its candles. Keeping the oath means they never sell wax, and instead store it in their cellar where it has been accumulating for forty years.\n\nSAID:\nTheir mother swore an oath to the old abbey that every scrap of wax would go to its candles.\nThey keep the oath anyway and store the wax in the cellar, where it has been piling up ever since.\n\nANSWER:\nThe family is sworn to an oath made by their mother to the old abbey, which requires that every scrap of their beeswax goes to its candles. Keeping the oath means they never sell wax, and instead store it in their cellar where it has been accumulating for forty years."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "Read as: The mother of the family swore an oath to the old abbey that every scrap of wax would go to its candles. The abbey burned down forty years ago, but they keep the oath anyway, storing the wax in the cellar where it has been piling up ever since.\n\nSAID:\nTheir mother swore an oath to the old abbey that every scrap of wax would go to its candles.\nThe abbey burned down forty years ago.\nThey keep the oath anyway and store the wax in the cellar, where it has been piling up ever since.\n\nANSWER:\nThe mother of the family swore an oath to the old abbey that every scrap of wax would go to its candles. The abbey burned down forty years ago, but they keep the oath anyway, storing the wax in the cellar where it has been piling up ever since."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "Read as: The family swore an oath to the old abbey that every scrap of their wax would go to its candles. The abbey burned down forty years ago, but they keep the oath anyway, storing the wax in the cellar where it has been piling up ever since.\n\nSAID:\nTheir mother swore an oath to the old abbey that every scrap of wax would go to its candles.\nThe abbey burned down forty years ago.\nThey keep the oath anyway and store the wax in the cellar, where it has been piling up ever since.\n\nANSWER:\nThe family swore an oath to the old abbey that every scrap of their wax would go to its candles. The abbey burned down forty years ago, but they keep the oath anyway, storing the wax in the cellar where it has been piling up ever since."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "Read as: The family has sworn an oath to the old abbey that every scrap of their wax will go to its candles. Keeping the oath has cost them the ability to sell their wax, leaving it to pile up in their cellar since the abbey burned down.\n\nSAID:\nTheir mother swore an oath to the old abbey that every scrap of wax would go to its candles.\nThey keep the oath anyway and store the wax in the cellar, where it has been piling up ever since.\n\nANSWER:\nThe family has sworn an oath to the old abbey that every scrap of their wax will go to its candles. Keeping the oath has cost them the ability to sell their wax, leaving it to pile up in their cellar since the abbey burned down."
+        },
+        {
+          "ok": false,
+          "why": "unreadable, twice",
+          "text": "Read as: (unreadable, twice)\n\nSAID\nTheir mother swore an oath to the old abbey that every scrap of wax would go to its candles.\nThe abbey burned down forty years ago.\nThey keep the oath anyway.\n\nANSWER\nThe sisters' mother swore an oath to the old abbey that every scrap of their wax would go to its candles. The abbey burned down forty years ago, but the sisters keep the oath anyway.\n\n--- repair ---\n\nSAID\nTheir mother swore an oath to the old abbey that every scrap of wax would go to its candles.\nThe abbey burned down forty years ago.\nThey keep the oath anyway.\n\nANSWER\nThe sisters' mother swore an oath to the old abbey that every scrap of their wax would go to its candles. The abbey burned down forty years ago, but the sisters keep the oath anyway."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "Read as: The sisters' mother swore an oath to the old abbey that every scrap of wax would go to its candles. They keep the oath anyway.\n\nSAID:\nTheir mother swore an oath to the old abbey that every scrap of wax would go to its candles.\nThey keep the oath anyway.\n\nANSWER:\nThe sisters' mother swore an oath to the old abbey that every scrap of wax would go to its candles. They keep the oath anyway."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "Read as: The sisters' mother swore an oath to the old abbey that every scrap of wax would go to its candles. The abbey burned down forty years ago, but the sisters keep the oath anyway, storing the accumulating wax in their cellar.\n\nSAID:\nTheir mother swore an oath to the old abbey that every scrap of wax would go to its candles.\nThe abbey burned down forty years ago.\nThey keep the oath anyway and store the wax in the cellar, where it has been piling up ever since.\n\nANSWER:\nThe sisters' mother swore an oath to the old abbey that every scrap of wax would go to its candles. The abbey burned down forty years ago, but the sisters keep the oath anyway, storing the accumulating wax in their cellar."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "Read as: The sisters' mother swore an oath to the old abbey that every scrap of wax would go to its candles. The sisters keep this oath even though the abbey burned down forty years ago, storing all the wax in their cellar where it has been accumulating ever since.\n\nSAID:\nTheir mother swore an oath to the old abbey that every scrap of wax would go to its candles.\nThey keep the oath anyway and store the wax in the cellar, where it has been piling up ever since.\n\nANSWER:\nThe sisters' mother swore an oath to the old abbey that every scrap of wax would go to its candles. The sisters keep this oath even though the abbey burned down forty years ago, storing all the wax in their cellar where it has been accumulating ever since."
+        },
+        {
+          "ok": true,
+          "why": "names both",
+          "text": "Read as: The sisters' mother swore an oath to the old abbey that every scrap of wax would go to its candles. They keep the oath anyway, storing the wax in the cellar where it has been piling up for forty years.\n\nSAID:\ntheir mother swore an oath to the old abbey that every scrap of wax would go to its candles.\nThey keep the oath anyway and store the wax in the cellar, where it has been piling up ever since.\n\nANSWER:\nThe sisters' mother swore an oath to the old abbey that every scrap of wax would go to its candles. They keep the oath anyway, storing the wax in the cellar where it has been piling up for forty years."
+        }
+      ],
+      "failed": 1,
+      "total": 20,
+      "infra": "",
+      "walls": 0,
+      "at": 1793118857171
+    },
+    "world:untouched": {
+      "suite": "world",
+      "test": "untouched",
+      "label": "An untouched question",
+      "contract": "A question the conversation never touched comes back as none.",
+      "runs": [
+        {
+          "ok": true,
+          "why": "none",
+          "text": "Read as: none\n\nSAID: nothing\n\nANSWER: none"
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "Read as: none\n\nSAID: nothing\nANSWER: none"
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "Read as: none\n\nSAID: nothing\n\nANSWER: none"
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "Read as: none\n\nSAID: nothing\n\nANSWER: none"
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "Read as: none\n\nSAID: nothing\nANSWER: none"
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "Read as: none\n\nSAID: nothing\nANSWER: none"
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "Read as: none\n\nSAID: nothing\n\nANSWER: none"
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "Read as: none\n\nSAID: nothing\n\nANSWER: none"
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "Read as: none\n\nSAID: nothing\nANSWER: none"
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "Read as: none\n\nSAID: nothing\nANSWER: none"
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "Read as: none\n\nSAID: nothing\nANSWER: none"
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "Read as: none\n\nSAID: nothing\n\nANSWER: none"
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "Read as: none\n\nSAID: nothing\nANSWER: none"
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "Read as: none\n\nSAID: nothing\nANSWER: none"
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "Read as: none\n\nSAID: nothing\nANSWER: none"
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "Read as: none\n\nSAID: nothing\nANSWER: none"
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "Read as: none\n\nSAID: nothing\nANSWER: none"
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "Read as: none\n\nSAID: nothing\n\nANSWER: none"
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "Read as: none\n\nSAID: nothing\nANSWER: none"
+        },
+        {
+          "ok": true,
+          "why": "none",
+          "text": "Read as: none\n\nSAID: nothing\nANSWER: none"
+        }
+      ],
+      "failed": 0,
+      "total": 20,
+      "infra": "",
+      "walls": 0,
+      "at": 1793119014987
+    }
+  }
+}
