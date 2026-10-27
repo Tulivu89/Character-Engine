@@ -1,6 +1,6 @@
 # CE-INDEX
 
-Engine: 3.14.12
+Engine: 3.14.13
 
 The grep directory for `character-engine.naiscript`: subject, token, the rule in one line. The reasoning lives at the code under each token -- `grep '\[TOKEN\]'` finds it. This file is a locator, not a second copy of the comments; a line that grows into an explanation should move to its site.
 
@@ -167,6 +167,9 @@ Update this file in the same patch as any change it describes.
 - `SEED-REROLL` -- one row, on demand, and it CLEARS the asked set before writing -- unlike the batch, which only adds
 - `SEED-ONE-FIELD` -- `only` NARROWS ceSeedDefs, so the question block, the extract ask and max_tokens all shrink with it; the write drops the SUMMARY and does NOT blank on a missing line, reversing SEED-REROLL's `blank` for the set of one
 - `DIGEST-ANCESTOR` `DIGEST-SIBLING` -- PROMPTS 9. Built ONCE PER BATCH and carried in the base, so they are prefix rather than tail. An ungenerated ancestor contributes NO LINE, not a placeholder: a line saying a thing exists and nothing else is an invitation to invent it at the level the pipeline has decided not to invent at yet
+- `REC-CTX` -- ONE context for every pass that writes a record (ceRecordContext): the Build seed and the profile Generate read it, so a record gets the same picture from either door. Where it sits, what it belongs to, what is beside and inside it; a character gets its home, species and group, and its peers by place and group
+- `REC-WORLD` -- record writers get the world's constraints (ceWorldSpan 'records'); Themes, Stakes, Intimacy and Danger are the narrator's and stay out (CE_WORLD_RECORD_SKIP). A switched-off question is out of every span
+- `BUILD-LIST` -- a committed row shows what an Entities row shows (icon, kind, where, how much inside) plus its first line, searches on all of it, pages, and Selects with the Entities tab's own Move and Delete
 - `KIND-SHAPE` -- a LOCATION's shape is the RUNG's, because a rung is a scale and a scale is a question set
 - `SEED-DEFS-CHAR` -- A CHARACTER IS NOT A CATALOG ENTRY AND ITS THREE SHAPES ARE THREE REAL QUESTION SETS -- classic is STATIC_FIELD_DEFS (the sheet), studio is the `kind
 - `CHAR-SEED-DIRECT` -- A BUILD-ROUTE CHARACTER COMMITS ITS SEEDS AND THE DUMP PASS IS NOT RUN. The old path derived the sheet from a concept dump with its own extraction call -- one more
