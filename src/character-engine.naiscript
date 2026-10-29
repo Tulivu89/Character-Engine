@@ -4,9 +4,9 @@ id: ce000002-0000-0000-0000-000000000001
 name: Character Engine
 createdAt: 1776400000000
 updatedAt: 1793000000000
-version: 3.14.13
+version: 3.14.14
 author: AmbiProp
-description: Character Engine v3.14.13
+description: Character Engine v3.14.14
 memoryLimit: 128
 ---*/
 
@@ -110,7 +110,9 @@ memoryLimit: 128
 //                           and the ccchat route
 //   BUILDCHAT         2934  build chats [BUILD-CHAT] -- one transcript per scope, never WIZLIVE's path;
 //                           the world, name and seed passes that read them live here too
-//   BENCH              379  prompt bench [BENCH] -- live prompts on fixed inputs, counted per run;
+//   PLAN               904  the list of things, the plan and Make [PLAN] -- one read of the
+//                           World conversation into rows, ticked and made in one press
+//   BENCH              588  prompt bench [BENCH] -- live prompts on fixed inputs, counted per run;
 //                           the Settings > Bench tab
 //
 // The KIT-* family is the jsx kit, in dependency order: tokens, then stores, then the
@@ -2850,9 +2852,17 @@ async function saveWizardDrafts(drafts: WizardDraft[]): Promise<void> {
     await api.v1.storyStorage.set(STORAGE_WIZ_DRAFTS, JSON.stringify(drafts || []));
 }
 
-async function loadWizardDraftsOfKind(kind: string): Promise<WizardDraft[]> {
+// [PLAN] A PLAN ROW IS NOT IN ITS KIND'S QUEUE until it is a record. Every kind stage, its
+// name and seed batches and its commit-all read through here, and none of them may pick up a
+// row the author has not ticked on the plan. `withPlan` is for the commit of named ids.
+async function loadWizardDraftsOfKind(kind: string, withPlan?: boolean): Promise<WizardDraft[]> {
     let all = await loadWizardDrafts();
-    return all.filter(function(d) { return d.kind === kind; });
+    return all.filter(function(d) {
+        if (d.kind !== kind) return false;
+        if (withPlan) return true;
+        let f: any = d.fields || {};
+        return !(String(f.plan || '') === '1' && !String(f[CE_DRAFT_DONE_KEY] || ''));
+    });
 }
 
 // Returns the ids created, so a generate-then-commit caller commits exactly its own
@@ -8509,7 +8519,7 @@ async function _ceFlatShapeOf(lock: any, kd: string): Promise<string> {
 }
 
 async function commitStagedDrafts(kind: string, onlyIds?: string[]): Promise<number> {
-    let drafts = await loadWizardDraftsOfKind(kind);
+    let drafts = await loadWizardDraftsOfKind(kind, !!(onlyIds && onlyIds.length));   // [PLAN]
     if (onlyIds && onlyIds.length) {
         drafts = drafts.filter(function(d) { return onlyIds.indexOf(d.id) >= 0; });
     }
@@ -33105,6 +33115,44 @@ var CE_PICKER_DEFS: { [k: string]: any } = {
         commit: function(ctx: any, id: string): Promise<any> {
             ceTabSet('build', String(id));
             return cePublishBuild();
+        }
+    },
+
+    // [PLAN] A left-out thing added to the plan after all: which kind it is.
+    planKind: {
+        title: 'Add it as',
+        hint: 'What kind of thing this is. It joins the plan ticked, with what was said about it.',
+        options: function(): any[] {
+            var ks = _cePlanKindsShown();
+            var out: any[] = [];
+            for (var i = 0; i < ks.length; i++) {
+                out.push({ id: String(ks[i].word), label: String(ks[i].word), sub: String(ks[i].line) });
+            }
+            return out;
+        },
+        current: function(): string { return ''; },
+        commit: function(ctx: any, id: string): Promise<any> {
+            return ceBuildOp(function() { return cePlanLeftAdd(String((ctx && ctx.leftId) || ''), String(id)); })
+                .then(cePublishBuild);
+        }
+    },
+
+    // [PLAN] A planned place's scale, which decides its questions.
+    planScale: {
+        title: 'Scale',
+        hint: 'How big this place is. It decides which questions are answered when it is made.',
+        options: function(): any[] {
+            var sc = _cePlanScales();
+            var out: any[] = [];
+            for (var i = 0; i < sc.length; i++) {
+                out.push({ id: String(sc[i].id), label: String(sc[i].label), sub: String(sc[i].hint) });
+            }
+            return out;
+        },
+        current: function(ctx: any): string { return String((ctx && ctx.cur) || ''); },
+        commit: function(ctx: any, id: string): Promise<any> {
+            return ceBuildOp(function() { return ceScopeRowWriteMany(String((ctx && ctx.id) || ''), { scale: String(id) }); })
+                .then(cePublishBuild);
         }
     },
 
@@ -69053,6 +69101,9 @@ var CE_BUILD_STAGES: any[] = [
     // and Charter was the two tiers that compression wrote. The world conversation now
     // carries the story as well as its canon, and its answers are the one artifact.
     { id: 'world',    label: 'World',     built: true  },
+    // [PLAN] THE LIST OF THINGS, read from the World conversation, ticked and made at once.
+    // The kind stages below stay until it has been tried; they never see its rows.
+    { id: 'plan',     label: 'Plan',      built: true  },
     // [SCOPE-ONE-STAGE] Scope and Locations were two stages and are one. WIZUI 5 gap 1
     // already puts the rung question "inline in S6's empty state at a new depth, as one
     // field" -- so keeping a separate form stage at depth 0 answered one question in two
@@ -69148,6 +69199,7 @@ function ceBuildStoreInit(): void {
                                     chatKey: '', chatLabel: '', scopeShape: 'builder',
                                     kdef: null, listAt: '', listDefs: [], cfg: null,
                                     chatAddr: '', setupRows: [], premiseTurns: 0,
+                                    planRows: [], planLeft: [], planMade: [], planNote: '',
                                     entList: [] });
     } catch (e) { api.v1.error('[AE:build] store init failed:', e); }
 }
@@ -69459,12 +69511,20 @@ async function cePublishBuild(): Promise<void> {
                 chatLbl = lLab ? (lLab + ' \u2014 all of them') : 'All of them';
             }
         }
+        // [PLAN] Read only by the stage that shows it.
+        var plan: any = { rows: [], left: [], made: [] };
+        if (stg === 'plan') {
+            try { plan = await cePlanPublishRows(); }
+            catch (ePl) { api.v1.error('[AE:plan] publish failed:', ePl); }
+        }
         var worldBlk = '';
         try { worldBlk = await ceWorldChatBlock(); }
         catch (eWb) { api.v1.error('[AE:build] world block:', eWb); worldBlk = CE_P_WORLD; }
         ceBuildStore.set(function(prev: any) {
             return { ready: true, stage: stg, charter: c, sections: secs, rows: qrows,
                      setupRows: setupRows, premiseTurns: premiseTurns, entList: entList,
+                     planRows: plan.rows, planLeft: plan.left, planMade: plan.made,
+                     planNote: prev ? String(prev.planNote || '') : '',
                      done: done, trail: trail, scopeAt: atId, rungHere: rungHere,
                      chatBlock: chatBlk, seedDefs: seedDefs,
                      // [WORLD-QLIST] [SCOPE-CHAT-STABLE] PUBLISHED, NOT BUILT IN THE
@@ -71425,6 +71485,7 @@ function _ceBuildRoot(): any {
         // stage change.
         h('div', { key: 'bstage:' + stage },
             stage === 'open'    ? _ceBuildOpening(st)
+          : stage === 'plan'    ? _ceBuildPlan(st, openMap)
           : ceBuildKind(stage)  ? _ceBuildScope(st, openMap)
           : _ceBuildWorld(st)),
     ]));
@@ -75011,7 +75072,8 @@ async function ceRecordContext(o: any): Promise<string> {
                 if (cIdx[i] && id && String(cIdx[i].id) === id) { me = cIdx[i]; break; }
             }
             var links: string[] = [];
-            var home = me ? String(me.homeLocationId || me.currentLocationId || '') : '';
+            var home = me ? String(me.homeLocationId || me.currentLocationId || '')
+                          : String((o && o.home) || '');   // [PLAN] a character not made yet
             if (home && byId[home]) {
                 var hEnt: any = await loadEntity(home);
                 var hLine = _ceDigestCut(String((hEnt && hEnt.description) || ''), 160);
@@ -75031,7 +75093,7 @@ async function ceRecordContext(o: any): Promise<string> {
                 }
                 links.push('Species: ' + spName + (spLine ? (' \u2014 ' + spLine) : ''));
             }
-            var fid = me ? String(me.factionId || '') : '';
+            var fid = me ? String(me.factionId || '') : String((o && o.factionId) || '');
             if (fid && byId[fid]) {
                 var fEnt: any = await loadEntity(fid);
                 var fLine = _ceDigestCut(String((fEnt && fEnt.description) || ''), 160);
@@ -76042,8 +76104,11 @@ function _ceSeedPatchOne(got: any, fid: string): any {
 // ceSeedDefs is built FROM defs: the question block names them, the extract ask repeats
 // them, and max_tokens is priced off their count. Narrowing at the write end would ask the
 // model ten questions, pay for ten answers and throw nine away.
+// [PLAN] `extra` carries what a plan row knows before it is a record: `scale` for a place with
+// no rung at that scale, and `home` / `factionId` for a character's record context.
 async function _ceSeedContext(parentId: string, rungId: string, kind?: string,
-                              pattern?: string, only?: string, listId?: string): Promise<any> {
+                              pattern?: string, only?: string, listId?: string,
+                              extra?: any): Promise<any> {
     var kd = String(kind || 'location');
     var c = await loadCharter();
     var ladder: any[] = ceKindLadder(kd, c);
@@ -76075,6 +76140,9 @@ async function _ceSeedContext(parentId: string, rungId: string, kind?: string,
     // and ceSeedDefs has never been able to tell a scale from a list from a pattern. A
     // ladderless kind passes 'any' here and always has, so nothing else moves.
     var askScope = _ceKindAskScope(kd, rung, String(pattern || ''), String(listId || ''));
+    if (!rung && extra && String(extra.scale || '') && kd === 'location') {
+        askScope = ceKindScopeOk(kd, String(extra.scale));
+    }
     var defs = ceSeedDefs(kd, askScope, cfg, kShape);
     // [SEED-ONE-FIELD] AND IT IS RESOLVED AGAINST THE SET, NEVER SYNTHESISED FROM THE ID.
     // The question the author pressed may not be asked at this pattern any more -- the two
@@ -76090,7 +76158,9 @@ async function _ceSeedContext(parentId: string, rungId: string, kind?: string,
         defs = narrowed;
     }
     // [REC-CTX] The same context a profile Generate on the finished record reads.
-    var recCtx = await ceRecordContext({ kind: kd, parentId: String(parentId || '') });
+    var recCtx = await ceRecordContext({ kind: kd, parentId: String(parentId || ''),
+                                         home: String((extra && extra.home) || ''),
+                                         factionId: String((extra && extra.factionId) || '') });
     // [SEED-CLASSIC] A CLASSIC ENTITY IS THE ONLY SHAPE WITH NO QUESTIONS AND A BODY.
     // Not a character's classic, which is a real question set (SEED-DEFS-CHAR) -- one word,
     // two meanings, and this is the one place both are in scope at once.
@@ -76522,6 +76592,910 @@ function ceBuildChatRegen(scope: string, block: string): Promise<BuildChat> {
 }
 
 // ============================================================================
+// SECTION PLAN — THE LIST OF THINGS, THE PLAN, AND MAKE  [PLAN]
+//
+// CE-BUILD2 3.3 and 3.4. One press reads the conversation and lists the things it settled;
+// the author ticks and edits the list; one press makes every ticked row into a record. The
+// six kind stages still stand beside this until it has been tried; nothing here reads them.
+//
+// [PLAN-CHAIN] THE PROMPT IS A DECISION CHAIN, one block per thing, and each line is decided
+// from the lines above it: what the author said about the thing is collected BEFORE anything
+// is decided about it, whether it was kept is decided before what it is, and what it is
+// before its name, place and size. Every arm of every step is written, and the examples are
+// pairs that look alike and get different answers (CE-BUILD2 4.1 names the failure each
+// step is there to stop).
+//
+// [PLAN-CODE] CODE DECIDES WHAT CAN BE LOOKED UP. The model writes what the conversation
+// says; code checks every value against the closed lists, matches names against what
+// exists, turns COUNT into rows, and decides what INSIDE becomes by the pair of kinds.
+//
+// Rows are WizardDrafts with fields.plan = '1', so the commit path is the one every stage
+// already uses. The kind stages skip them.
+// ============================================================================
+
+// [PLAN-CHAIN] The ask. Placeholders are filled by cePlanAsk; nothing else edits it.
+var CE_P_PLAN_LINES: string[] = [
+    "The conversation above is finished. Nothing you write now is read by a person; it is stored. Do not ask a question or address anyone.",
+    "",
+    "List the specific things the author has settled should exist in this world. Work through one thing at a time. For each thing, answer the steps below in order, one line per step, each line starting with its label.",
+    "",
+    "THING: the words the author first used for it.",
+    "SAID: every place in the conversation that mentions it, quoted, separated by \" / \". Include mentions under other names and descriptions of the same thing.",
+    "SETTLED: from SAID, did the author propose it or agree to it, and not drop or replace it later? Write what SAID shows, then YES or NO. If NO, the block ends here; go to the next thing.",
+    "KIND: from SAID, write what the thing is or does, then one of: {KINDWORDS}",
+    "NAME: the name exactly as the author spelled it. If the author gave it no name: (unnamed)",
+    "COUNT: when the author gave a number of unnamed ones (\"three crews\"), that number. Otherwise 1.",
+    "INSIDE: from SAID, the name of the thing it sits inside or belongs to, as the author placed it. If SAID does not place it inside anything: (top)",
+    "SCALE: only when KIND is Place. From SAID and INSIDE, write what it is, then one of: {SCALEWORDS}. If nothing in SAID or INSIDE shows its size: region when INSIDE is (top), otherwise structure.",
+    "LINE: one sentence saying what it is, using only what SAID shows.",
+    "",
+    "Leave a blank line between things. Things already recorded are listed below; do not list them again unless the conversation adds something new about one, and then write its NAME exactly as listed.",
+    "",
+    "ALREADY RECORDED:",
+    "{RECORDED}",
+    "",
+    "If the conversation settles nothing new, reply with the single word: none",
+    "",
+    "KINDS",
+    "{KINDS}",
+    "",
+    "SCALES",
+    "{SCALES}",
+    "",
+    "EXAMPLES",
+    "These come from a different story. Each pair looks alike and gets a different answer.",
+    "",
+    "THING: the lighthouse",
+    "SAID: \"there's a lighthouse on the point\" / \"the lighthouse keeper sees everything that comes in\"",
+    "SETTLED: the author put it in and built on it with the keeper: YES",
+    "KIND: a building on the point that a keeper works in: Place",
+    "NAME: (unnamed)",
+    "COUNT: 1",
+    "INSIDE: SAID puts it on the point, and the point is not a thing listed or named: (top)",
+    "SCALE: one building: structure",
+    "LINE: The lighthouse on the point, whose keeper sees every boat that comes in.",
+    "",
+    "THING: a second lighthouse",
+    "SAID: \"maybe a second lighthouse on the far shore?\" / \"no, one is enough, scrap the second\"",
+    "SETTLED: the author raised it and then dropped it: NO",
+    "",
+    "THING: the Ferrymen",
+    "SAID: \"the Ferrymen run the crossing and nobody else may\"",
+    "SETTLED: the author stated it as fact: YES",
+    "KIND: an organisation that controls the crossing: Group",
+    "NAME: the Ferrymen",
+    "COUNT: 1",
+    "INSIDE: SAID does not place it inside anything: (top)",
+    "LINE: The Ferrymen hold the only right to carry passengers across.",
+    "",
+    "THING: Oskar",
+    "SAID: \"a ferryman called Oskar, older than the rest\" / \"Oskar owes the harbourmaster\"",
+    "SETTLED: the author introduced him and gave him a debt: YES",
+    "KIND: one person with a name and a debt: Character",
+    "NAME: Oskar",
+    "COUNT: 1",
+    "INSIDE: SAID makes him one of the Ferrymen: the Ferrymen",
+    "LINE: Oskar is the oldest ferryman, and he owes the harbourmaster.",
+    "",
+    "THING: the Gull",
+    "SAID: \"the Ferrymen live aboard the Gull, an old hulk moored at the crossing\"",
+    "SETTLED: the author stated it as fact: YES",
+    "KIND: a vessel people live aboard, so a place: Place",
+    "NAME: the Gull",
+    "COUNT: 1",
+    "INSIDE: SAID moors it at the crossing, and the crossing is not a thing listed or named: (top)",
+    "SCALE: one vessel that people live in: structure",
+    "LINE: The Gull is an old hulk at the crossing, where the Ferrymen live.",
+    "",
+    "THING: Oskar's oar",
+    "SAID: \"Oskar's oar is carved with the names of everyone he's drowned\"",
+    "SETTLED: the author stated it as fact: YES",
+    "KIND: a thing he carries and uses: Object",
+    "NAME: (unnamed)",
+    "COUNT: 1",
+    "INSIDE: SAID makes it Oskar's: Oskar",
+    "LINE: Oskar's oar, carved with the names of everyone he has drowned.",
+    "",
+    "THING: the old mill",
+    "SAID: \"the old mill on the weir\" / \"they call the mill Grindle\"",
+    "SETTLED: the author placed it and named it: YES",
+    "KIND: a building on the weir: Place",
+    "NAME: Grindle",
+    "COUNT: 1",
+    "INSIDE: SAID puts it on the weir, and the weir is not a thing listed or named: (top)",
+    "SCALE: one building: structure",
+    "LINE: Grindle, the old mill on the weir.",
+    "",
+    "THING: rival crews",
+    "SAID: \"three rival crews work the river, I haven't named them\"",
+    "SETTLED: the author stated they exist: YES",
+    "KIND: organised crews: Group",
+    "NAME: (unnamed)",
+    "COUNT: 3",
+    "INSIDE: SAID does not place them inside anything: (top)",
+    "LINE: A crew that works the river in rivalry with the others."
+];
+
+// One entry per word the model answers with. People and Creature are one record type on two
+// lists, and each line carries the fact that separates them.
+var CE_PLAN_KINDS: any[] = [
+    { word: 'Place',     kind: 'location',  list: '',         group: 'Places',
+      line: 'anywhere people can be, from a region to a single room, including a vessel or vehicle people live in' },
+    { word: 'People',    kind: 'species',   list: 'people',   group: 'Peoples',
+      line: 'a kind of being that speaks, builds or keeps customs' },
+    { word: 'Creature',  kind: 'species',   list: 'bestiary', group: 'Creatures',
+      line: 'a kind of animal or monster that does not' },
+    { word: 'Group',     kind: 'faction',   list: '',         group: 'Groups',
+      line: 'an organisation, family, crew, order or government' },
+    { word: 'Character', kind: 'character', list: '',         group: 'Characters',
+      line: 'one particular person' },
+    { word: 'Object',    kind: 'item',      list: '',         group: 'Objects',
+      line: 'one particular thing that is carried, owned or used' },
+    { word: 'Thread',    kind: 'narrative', list: '',         group: 'Threads',
+      line: 'a situation or storyline already under way' }
+];
+
+function _cePlanKindsOn(charter: any): any[] {
+    var off: any = (charter && charter.kinds) || {};
+    var out: any[] = [];
+    for (var i = 0; i < CE_PLAN_KINDS.length; i++) {
+        if (off[String(CE_PLAN_KINDS[i].kind)] === false) continue;
+        out.push(CE_PLAN_KINDS[i]);
+    }
+    return out;
+}
+// The same list for a synchronous reader (the pickers), from what cePublishBuild last read.
+function _cePlanKindsShown(): any[] {
+    var out: any[] = [];
+    for (var i = 0; i < CE_PLAN_KINDS.length; i++) {
+        if (_ceBuildKindsOff[String(CE_PLAN_KINDS[i].kind)] === true) continue;
+        out.push(CE_PLAN_KINDS[i]);
+    }
+    return out;
+}
+function _cePlanKindOf(word: string): any {
+    var w = String(word || '').trim().toLowerCase();
+    for (var i = 0; i < CE_PLAN_KINDS.length; i++) {
+        if (String(CE_PLAN_KINDS[i].word).toLowerCase() === w) return CE_PLAN_KINDS[i];
+    }
+    return null;
+}
+function _cePlanKindFor(kind: string, list: string): any {
+    for (var i = 0; i < CE_PLAN_KINDS.length; i++) {
+        var k: any = CE_PLAN_KINDS[i];
+        if (String(k.kind) !== String(kind || '')) continue;
+        if (String(k.kind) === 'species' && String(k.list) !== (String(list || '') || 'people')) continue;
+        return k;
+    }
+    return null;
+}
+function _cePlanScales(): any[] {
+    var out: any[] = [];
+    for (var i = 0; i < CE_LADDER_SCOPES.length; i++) {
+        if (String(CE_LADDER_SCOPES[i].id) !== 'any') out.push(CE_LADDER_SCOPES[i]);
+    }
+    return out;
+}
+
+// The ask, filled. `recorded` is one line per thing already in the world or the plan.
+function cePlanAsk(kinds: any[], recorded: string[]): string {
+    var words: string[] = [];
+    var kLines: string[] = [];
+    for (var i = 0; i < kinds.length; i++) {
+        words.push(String(kinds[i].word));
+        kLines.push(String(kinds[i].word) + ' - ' + String(kinds[i].line));
+    }
+    var sc = _cePlanScales();
+    var sWords: string[] = [];
+    var sLines: string[] = [];
+    for (i = 0; i < sc.length; i++) {
+        sWords.push(String(sc[i].id));
+        sLines.push(String(sc[i].id) + ' - ' + String(sc[i].hint));
+    }
+    var rec = (recorded && recorded.length) ? recorded.join('\n') : '(nothing yet)';
+    return CE_P_PLAN_LINES.join('\n')
+        .replace('{KINDWORDS}', words.join(', '))
+        .replace('{SCALEWORDS}', sWords.join(', '))
+        .replace('{RECORDED}', rec)
+        .replace('{KINDS}', kLines.join('\n'))
+        .replace('{SCALES}', sLines.join('\n'));
+}
+
+// ── Reading the reply ─────────────────────────────────────────────────────────
+var CE_PLAN_LABELS: string[] = ['THING', 'SAID', 'SETTLED', 'KIND', 'NAME', 'COUNT', 'INSIDE', 'SCALE', 'LINE'];
+
+// Labelled lines into blocks at each THING. Decoration around a label (bullets, bold, case,
+// spacing) is tolerated; a line with no label continues the one above it.
+function cePlanParse(text: string): any[] {
+    var t = ceStripThink(String(text || '')).trim();
+    if (!t || /^none\.?$/i.test(t)) return [];
+    var rows = t.split('\n');
+    var blocks: any[] = [];
+    var cur: any = null;
+    var last = '';
+    var re = /^[\s>*\-\u2022]*\**\s*([A-Za-z]+)\s*\**\s*:\s*\**\s*(.*)$/;
+    for (var i = 0; i < rows.length; i++) {
+        var line = String(rows[i] || '');
+        if (!line.trim()) continue;
+        var m = re.exec(line);
+        var lab = m ? String(m[1]).toUpperCase() : '';
+        if (m && CE_PLAN_LABELS.indexOf(lab) >= 0) {
+            var val = String(m[2] || '').replace(/\*+\s*$/, '').trim();
+            if (lab === 'THING') { cur = { THING: val }; blocks.push(cur); last = 'THING'; continue; }
+            if (!cur) continue;
+            cur[lab] = val;
+            last = lab;
+        } else if (cur && last) {
+            cur[last] = String(cur[last] || '') + ' ' + line.trim();
+        }
+    }
+    return blocks;
+}
+
+// The answer at the end of a reasoned line: "what SAID shows: Place" reads as Place.
+function _cePlanTail(v: string): string {
+    var s = String(v || '').trim();
+    var c = s.lastIndexOf(':');
+    var tail = (c >= 0) ? s.substring(c + 1) : s;
+    return tail.replace(/^[\s"'\u201c\u2018(]+|[\s"'\u201d\u2019).,;!]+$/g, '').trim();
+}
+function _cePlanQuotes(said: string): string[] {
+    var out: string[] = [];
+    var parts = String(said || '').split(/\s+\/\s+/);
+    for (var i = 0; i < parts.length; i++) {
+        var q = parts[i].trim().replace(/^["'\u201c\u2018]+|["'\u201d\u2019]+$/g, '').trim();
+        if (q) out.push(q);
+    }
+    return out;
+}
+
+// One block, checked. Returns { ok, kept, left, error, row } where row is the clean reading.
+function cePlanCheck(b: any, kinds: any[]): any {
+    var thing = String(b.THING || '').trim();
+    var settledRaw = String(b.SETTLED || '').trim();
+    var verdict = settledRaw.replace(/[\s.,;:!)]+$/, '').split(/\s+/).pop() || '';
+    verdict = verdict.toUpperCase();
+    if (verdict !== 'YES' && verdict !== 'NO') {
+        return { ok: false, error: 'SETTLED for "' + thing + '" must end in YES or NO. Write what SAID shows, then YES or NO.' };
+    }
+    var quotes = _cePlanQuotes(String(b.SAID || ''));
+    if (verdict === 'NO') return { ok: true, left: true, row: { thing: thing, said: quotes } };
+    var kWord = _cePlanTail(String(b.KIND || ''));
+    var kd: any = null;
+    for (var i = 0; i < kinds.length; i++) {
+        var w = String(kinds[i].word).toLowerCase();
+        var low = kWord.toLowerCase();
+        if (low === w || low.length > w.length && low.substring(low.length - w.length - 1) === (' ' + w)) { kd = kinds[i]; break; }
+    }
+    if (!kd) {
+        var words: string[] = [];
+        for (i = 0; i < kinds.length; i++) words.push(String(kinds[i].word));
+        return { ok: false, error: 'KIND for "' + thing + '" is "' + kWord + '", which is not one of: '
+                 + words.join(', ') + '. Choose the one that fits what SAID shows.' };
+    }
+    var countRaw = String(b.COUNT || '').trim();
+    var count = 1;
+    if (countRaw) {
+        var cm = /(\d+)\s*$/.exec(countRaw.replace(/[.\s]+$/, ''));
+        count = cm ? Number(cm[1]) : NaN;
+        if (!(count >= 1 && count <= 24)) {
+            return { ok: false, error: 'COUNT for "' + thing + '" must be a number from 1 to 24.' };
+        }
+    }
+    var name = _cePlanTail(String(b.NAME || ''));
+    if (/^\(?\s*unnamed\s*\)?$/i.test(name)) name = '';
+    var inside = _cePlanTail(String(b.INSIDE || ''));
+    if (/^\(?\s*top\s*\)?$/i.test(inside) || /^none$/i.test(inside)) inside = '';
+    var scale = '';
+    if (kd.kind === 'location') {
+        var sRaw = _cePlanTail(String(b.SCALE || '')).toLowerCase();
+        var sc = _cePlanScales();
+        for (i = 0; i < sc.length; i++) {
+            if (sRaw === String(sc[i].id) || sRaw === String(sc[i].label).toLowerCase()
+                || (sRaw.length > String(sc[i].id).length && sRaw.substring(sRaw.length - String(sc[i].id).length - 1) === (' ' + String(sc[i].id)))) {
+                scale = String(sc[i].id); break;
+            }
+        }
+        if (!scale) {
+            if (sRaw) {
+                var sw: string[] = [];
+                for (i = 0; i < sc.length; i++) sw.push(String(sc[i].id));
+                return { ok: false, error: 'SCALE for "' + thing + '" is "' + sRaw + '", which is not one of: '
+                         + sw.join(', ') + '. Choose the one that fits what SAID shows.' };
+            }
+            scale = inside ? 'structure' : 'region';   // the prompt's own default, applied by code
+        }
+    }
+    return { ok: true, kept: true, row: {
+        thing: thing, said: quotes, word: String(kd.word), kind: String(kd.kind), list: String(kd.list || ''),
+        name: name, count: count, inside: inside, scale: scale, line: String(b.LINE || '').trim() } };
+}
+
+// The pass, as a function of its inputs, so the bench feeds it a fixture [BENCH-INPUTS].
+// One retry carries every rejection at once, with the rejected reply above it as a real
+// assistant turn; blocks that passed are kept either way. A transport failure throws.
+function cePlanParams(): any {
+    return { model: ceUtilityModel(), max_tokens: 1400, temperature: 0.4, enable_thinking: false };
+}
+async function cePlanRunFrom(base: any[], kinds: any[], recorded: string[]): Promise<any> {
+    var params = cePlanParams();
+    var msgs = base.slice(0);
+    msgs.push({ role: 'user', content: cePlanAsk(kinds, recorded) });
+    var res: any = await aeDiagGenerateWithStory('plan:things', msgs, params,
+                                                 undefined, undefined, 'background');
+    var raw = ceGenText(res);
+    var out: any = { kept: [], left: [], errors: [], raw: [raw] };
+    var blocks = cePlanParse(raw);
+    var bad: any[] = [];
+    for (var i = 0; i < blocks.length; i++) {
+        var r: any = cePlanCheck(blocks[i], kinds);
+        if (!r.ok) { bad.push({ thing: String(blocks[i].THING || ''), error: r.error }); continue; }
+        if (r.kept) out.kept.push(r.row); else out.left.push(r.row);
+    }
+    if (!bad.length) return out;
+    var errs: string[] = [];
+    for (i = 0; i < bad.length; i++) errs.push(String(bad[i].error));
+    msgs.push({ role: 'assistant', content: raw });
+    msgs.push({ role: 'user', content: 'Some blocks could not be read:\n' + errs.join('\n')
+        + '\n\nWrite those blocks again, and only those, in the same form.' });
+    var res2: any = await aeDiagGenerateWithStory('plan:things:retry', msgs, params,
+                                                  undefined, undefined, 'background');
+    var raw2 = ceGenText(res2);
+    out.raw.push(raw2);
+    var want: any = {};
+    for (i = 0; i < bad.length; i++) want[ceNameNormalise(bad[i].thing)] = true;
+    var b2 = cePlanParse(raw2);
+    for (i = 0; i < b2.length; i++) {
+        if (!want[ceNameNormalise(String(b2[i].THING || ''))]) continue;
+        var r2: any = cePlanCheck(b2[i], kinds);
+        if (!r2.ok) { out.errors.push(String(r2.error)); continue; }
+        if (r2.kept) out.kept.push(r2.row); else out.left.push(r2.row);
+        delete want[ceNameNormalise(String(b2[i].THING || ''))];
+    }
+    for (var k in want) { if (want[k]) out.errors.push('A block for "' + k + '" could not be read twice.'); }
+    return out;
+}
+
+// ── The live pass: read the conversation, write the rows ──────────────────────
+function _cePlanIsRow(d: any): boolean { return !!(d && d.fields && String(d.fields.plan || '') === '1'); }
+function _cePlanDone(d: any): string { return String((d && d.fields && d.fields[CE_DRAFT_DONE_KEY]) || ''); }
+
+// Everything with a name, as "Name (Kind)", for ALREADY RECORDED and for matching.
+async function _cePlanRecorded(): Promise<any> {
+    var lines: string[] = [];
+    var byNorm: any = {};
+    var eIdx: any[] = await loadEntityIndex();
+    for (var i = 0; i < eIdx.length; i++) {
+        var m: any = eIdx[i];
+        if (!m || !m.id || String(m.type) === 'character') continue;
+        var pk: any = _cePlanKindFor(String(m.type), String(m.speciesList || ''));
+        if (!pk) continue;
+        lines.push(String(m.name || 'Unnamed') + ' (' + String(pk.word) + ')');
+        var n = ceNameNormalise(String(m.name || ''));
+        if (n && !byNorm[n]) byNorm[n] = { id: String(m.id), kind: String(m.type), name: String(m.name || '') };
+    }
+    var cIdx: any[] = await loadIndex();
+    for (i = 0; i < cIdx.length; i++) {
+        if (!cIdx[i] || !cIdx[i].id) continue;
+        lines.push(String(cIdx[i].name || 'Unnamed') + ' (Character)');
+        var cn = ceNameNormalise(String(cIdx[i].name || ''));
+        if (cn && !byNorm[cn]) byNorm[cn] = { id: String(cIdx[i].id), kind: 'character', name: String(cIdx[i].name || '') };
+    }
+    var drafts = await loadWizardDrafts();
+    for (i = 0; i < drafts.length; i++) {
+        var d: any = drafts[i];
+        if (!_cePlanIsRow(d) || _cePlanDone(d) || String(d.kind) === 'planleft') continue;
+        var nm = String(d.fields.name || '').trim();
+        var dk: any = _cePlanKindFor(String(d.kind), String(d.listId || ''));
+        if (nm && dk) lines.push(nm + ' (' + String(dk.word) + ', planned)');
+    }
+    return { lines: lines, byNorm: byNorm };
+}
+
+async function cePlanRun(): Promise<string> {
+    var chat = await loadBuildChat('world');
+    if (!chat.turns.length) return 'Nothing to read yet. Talk the story through on the World stage first.';
+    var c = await loadCharter();
+    var kinds = _cePlanKindsOn(c);
+    if (!kinds.length) return 'Setup has every kind switched off, so there is nothing to plan.';
+    var rec = await _cePlanRecorded();
+    var base = await ceBuildChatMessages('world', await ceWorldChatBlock(), chat.turns);
+    var got: any = null;
+    try { got = await cePlanRunFrom(base, kinds, rec.lines); }
+    catch (ePr) {
+        api.v1.error('[AE:plan] pass failed:', ePr);
+        return _ceGenFailKind(ePr) === 'transport'
+            ? 'The call did not reach the model. Nothing was planned; try again in a moment.'
+            : 'The model returned nothing usable. Try again.';
+    }
+    var all = await loadWizardDrafts();
+    var turnsN = chat.turns.length;
+    var added = 0, merged = 0, known = 0, left = 0;
+    var i = 0, j = 0;
+    for (i = 0; i < got.kept.length; i++) {
+        var r: any = got.kept[i];
+        var nNorm = ceNameNormalise(r.name);
+        var tNorm = ceNameNormalise(r.thing);
+        // Already a record: shown, unticked, and never made twice.
+        var hit: any = nNorm ? rec.byNorm[nNorm] : null;
+        // Already a plan row: the new quotes join it.
+        var same: any = null;
+        for (j = 0; j < all.length; j++) {
+            var d: any = all[j];
+            if (!_cePlanIsRow(d) || _cePlanDone(d) || String(d.kind) !== r.kind) continue;
+            var dn = ceNameNormalise(String(d.fields.name || ''));
+            var dt = ceNameNormalise(String(d.fields.thing || ''));
+            if ((nNorm && dn === nNorm) || (!nNorm && !dn && dt && dt === tNorm)) { same = d; break; }
+        }
+        if (same) {
+            var had = _cePlanQuotes(String(same.fields.said || ''));
+            for (j = 0; j < r.said.length; j++) { if (had.indexOf(r.said[j]) < 0) had.push(r.said[j]); }
+            same.fields.said = had.join(' / ');
+            if (!String(same.fields.line || '').trim() && r.line) same.fields.line = r.line;
+            merged++;
+            continue;
+        }
+        for (var n = 0; n < r.count; n++) {
+            var f: any = {
+                plan: '1', planned: hit ? '0' : '1', thing: r.thing, said: r.said.join(' / '),
+                line: r.line, name: (r.count > 1) ? '' : r.name, insideName: r.inside,
+                scale: r.scale, fromTurn: String(turnsN), exists: hit ? hit.id : ''
+            };
+            all.push({ id: 'wdraft_' + generateId(), kind: r.kind, fields: f, sourceChatIds: [],
+                       parentId: null, listId: r.list || undefined, createdAt: Date.now() } as any);
+            if (hit) known++; else added++;
+        }
+    }
+    for (i = 0; i < got.left.length; i++) {
+        var lr: any = got.left[i];
+        var lt = ceNameNormalise(lr.thing);
+        var dup = false;
+        for (j = 0; j < all.length; j++) {
+            if (String(all[j].kind) === 'planleft' && ceNameNormalise(String(all[j].fields.thing || '')) === lt) { dup = true; break; }
+        }
+        if (dup) continue;
+        all.push({ id: 'wdraft_' + generateId(), kind: 'planleft',
+                   fields: { plan: '1', thing: lr.thing, said: lr.said.join(' / ') },
+                   sourceChatIds: [], parentId: null, createdAt: Date.now() } as any);
+        left++;
+    }
+    await saveWizardDrafts(all);
+    var msg = added ? (String(added) + ' thing' + (added === 1 ? '' : 's') + ' planned.') : 'Nothing new to plan.';
+    if (merged) msg += ' ' + String(merged) + ' already on the list got what was said about them.';
+    if (known) msg += ' ' + String(known) + ' already in your world, shown unticked.';
+    if (left) msg += ' ' + String(left) + ' you dropped, listed under the plan.';
+    if (got.errors.length) msg += ' ' + String(got.errors.length) + ' could not be read.';
+    return msg;
+}
+
+// ── Editing the plan ─────────────────────────────────────────────────────────
+async function cePlanRowAdd(word: string, thing?: string, said?: string): Promise<void> {
+    var k: any = _cePlanKindOf(word);
+    if (!k) return;
+    var all = await loadWizardDrafts();
+    all.push({ id: 'wdraft_' + generateId(), kind: String(k.kind),
+               fields: { plan: '1', planned: '1', thing: String(thing || ''), said: String(said || ''),
+                         line: '', name: '', insideName: '', scale: (k.kind === 'location') ? 'region' : '',
+                         fromTurn: '', exists: '' },
+               sourceChatIds: [], parentId: null, listId: k.list || undefined, createdAt: Date.now() } as any);
+    await saveWizardDrafts(all);
+}
+async function cePlanRowRemove(id: string): Promise<void> { await removeWizardDrafts([String(id)]); }
+async function cePlanLeftAdd(leftId: string, word: string): Promise<void> {
+    var all = await loadWizardDrafts();
+    var row: any = null;
+    for (var i = 0; i < all.length; i++) { if (String(all[i].id) === String(leftId)) row = all[i]; }
+    if (!row) return;
+    await removeWizardDrafts([String(leftId)]);
+    await cePlanRowAdd(word, String(row.fields.thing || ''), String(row.fields.said || ''));
+}
+
+// ── Make ──────────────────────────────────────────────────────────────────────
+// [PLAN-LINK] WHAT INSIDE BECOMES, BY THE PAIR OF KINDS. The model said what a thing sits in
+// or belongs to; which field that is depends on both kinds, and that is a lookup.
+//   place in place, group in group          parentId, before the commit
+//   character in group                      factionId
+//   character in place                      homeLocationId, and the body is put there
+//   object in character or place            parentId (who or what holds it)
+//   anything else                           no link; the line keeps what was said
+function _cePlanLinkOf(kind: string, targetKind: string): string {
+    var a = String(kind || ''), b = String(targetKind || '');
+    if (a === 'location' && b === 'location') return 'parent';
+    if (a === 'faction' && b === 'faction') return 'parent';
+    if (a === 'character' && b === 'faction') return 'faction';
+    if (a === 'character' && b === 'location') return 'home';
+    if (a === 'item' && (b === 'character' || b === 'location')) return 'holder';
+    return '';
+}
+
+var CE_PLAN_KIND_ORDER: string[] = ['location', 'faction', 'species', 'character', 'item', 'narrative'];
+var _cePlanBusy = false;
+var _cePlanStop = false;
+
+async function cePlanMake(): Promise<string> {
+    if (_cePlanBusy) return 'Already making.';
+    _cePlanBusy = true;
+    _cePlanStop = false;
+    var made = 0, failed = 0, total = 0;
+    try {
+        var all = await loadWizardDrafts();
+        var rows: any[] = [];
+        for (var i = 0; i < all.length; i++) {
+            var d: any = all[i];
+            if (!_cePlanIsRow(d) || String(d.kind) === 'planleft' || _cePlanDone(d)) continue;
+            if (String(d.fields.planned || '') !== '1' || String(d.fields.exists || '')) continue;
+            rows.push(d);
+        }
+        if (!rows.length) return 'Nothing is ticked.';
+        // Parents first: a row whose INSIDE names another row waits for it. Kind order breaks
+        // ties, so places exist before the people and things placed in them.
+        var byName: any = {};
+        for (i = 0; i < rows.length; i++) {
+            var rn = ceNameNormalise(String(rows[i].fields.name || ''));
+            if (rn) byName[rn] = rows[i];
+        }
+        var depth = function(d0: any): number {
+            var n = 0, cur: any = d0, seen: any = {};
+            while (cur && n < 12) {
+                var inn = ceNameNormalise(String(cur.fields.insideName || ''));
+                var up: any = inn ? byName[inn] : null;
+                if (!up || seen[String(up.id)]) break;
+                seen[String(up.id)] = 1; n++; cur = up;
+            }
+            return n;
+        };
+        rows.sort(function(a: any, b: any) {
+            var da = depth(a), db = depth(b);
+            if (da !== db) return da - db;
+            return CE_PLAN_KIND_ORDER.indexOf(String(a.kind)) - CE_PLAN_KIND_ORDER.indexOf(String(b.kind));
+        });
+        total = rows.length;
+        // Saved first: every record below reads the world through its span (CE-BUILD2 3.4).
+        try { await commitWizardMemory(await loadConfig()); } catch (eWm) { api.v1.error('[AE:plan] memory save failed:', eWm); }
+        var madeBy: any = {};   // normalised name -> { id, kind }
+        for (var ri = 0; ri < rows.length; ri++) {
+            if (_cePlanStop) break;
+            var row: any = rows[ri];
+            var label = String(row.fields.name || row.fields.thing || 'one');
+            _cePlanNote('Making ' + String(ri + 1) + ' of ' + String(total) + ': ' + label);
+            try {
+                var res: string = await _cePlanMakeOne(row, madeBy);
+                if (res) { failed++; await ceScopeRowWriteMany(String(row.id), { makeErr: res }); }
+                else made++;
+            } catch (eMk) {
+                api.v1.error('[AE:plan] make failed:', eMk);
+                if (_ceGenFailKind(eMk) === 'transport') {
+                    await ceScopeRowWriteMany(String(row.id), { makeErr: 'The call did not reach the model.' });
+                    return String(made) + ' made. The call did not reach the model; press Make again to carry on.';
+                }
+                failed++;
+                await ceScopeRowWriteMany(String(row.id), { makeErr: 'Something went wrong making this one.' });
+            }
+        }
+    } finally {
+        _cePlanBusy = false;
+        _cePlanNote('');
+    }
+    var msg = String(made) + ' made.';
+    if (failed) msg += ' ' + String(failed) + ' could not be made; each says why.';
+    if (_cePlanStop) msg += ' Stopped.';
+    return msg;
+}
+
+function _cePlanNote(s: string): void {
+    try { ceBuildPatch(function() { return { planNote: String(s || '') }; }); } catch (eNt) {}
+}
+
+// The record context a planned character is written with before it exists [REC-CTX].
+async function _cePlanTarget(insideName: string, madeBy: any): Promise<any> {
+    var n = ceNameNormalise(String(insideName || ''));
+    if (!n) return null;
+    if (madeBy[n]) return madeBy[n];
+    var rec = await _cePlanRecorded();
+    if (rec.byNorm[n]) return rec.byNorm[n];
+    // A near match is the attested name (CE-BUILD2 4.3); anything further is no link.
+    var pool: string[] = [];
+    var k: string;
+    for (k in rec.byNorm) pool.push(String(rec.byNorm[k].name));
+    var cl = ceNameClash(String(insideName), pool);
+    if (cl && cl.indexOf('near:') === 0) return rec.byNorm[ceNameNormalise(cl.substring(5))] || null;
+    return null;
+}
+
+// One row: link, name, seed, commit, link again. Returns '' or the reason it was not made.
+async function _cePlanMakeOne(row: any, madeBy: any): Promise<string> {
+    var kd = String(row.kind);
+    var f: any = row.fields || {};
+    var target: any = await _cePlanTarget(String(f.insideName || ''), madeBy);
+    var link = target ? _cePlanLinkOf(kd, String(target.kind)) : '';
+    var parentId = (link === 'parent') ? String(target.id) : '';
+    if (parentId !== String(row.parentId || '')) {
+        var all = await loadWizardDrafts();
+        for (var i = 0; i < all.length; i++) {
+            if (String(all[i].id) === String(row.id)) { all[i].parentId = parentId || null; break; }
+        }
+        await saveWizardDrafts(all);
+        row.parentId = parentId || null;
+    }
+    var quotes = _cePlanQuotes(String(f.said || ''));
+    var line = String(f.line || '').trim();
+    var said = quotes.length ? ('What the author said about it: ' + quotes.join(' / ')) : '';
+    var intent = [line, said].filter(function(s: string) { return !!s; }).join('\n');
+    var noun = _ceKindNoun(kd);
+    var name = String(f.name || '').trim();
+    if (!name) {
+        // The pool is the world's names of this kind and the plan's, so two rows made in one
+        // press cannot be given the same name.
+        var pool: string[] = await ceNamePool(kd);
+        var pAll = await loadWizardDrafts();
+        for (var pi = 0; pi < pAll.length; pi++) {
+            var pd: any = pAll[pi];
+            if (!_cePlanIsRow(pd) || String(pd.kind) !== kd || String(pd.id) === String(row.id)) continue;
+            var pn = String(pd.fields.name || '').trim();
+            if (pn && String(ceNameClash(pn, pool)).indexOf('exact:') !== 0) pool.push(pn);
+        }
+        var parentName = parentId && target ? String(target.name || '') : '';
+        var nBase = await ceNameMessages(null, parentName, '', pool, _cePlural(noun), kd, [], line,
+                                         quotes.join('\n'));
+        name = await ceNameOne(nBase, noun, line, pool);
+        if (!name) return 'No usable name came back. Type one and press Make again.';
+        await ceScopeRowWriteMany(String(row.id), { name: name });
+    }
+    // Seed: generated from what was said, on the record context, at the row's scale. A place
+    // takes the first rung of the story's ladder at that scale when there is one, so it opens
+    // with that rung's shape; without one the scale alone decides its questions.
+    var rungId = '';
+    if (kd === 'location' && String(f.scale || '')) {
+        var lad: any[] = ceKindLadder('location', await loadCharter());
+        for (var li = 0; li < lad.length; li++) {
+            if (String(lad[li].scope || '') === String(f.scale)) { rungId = String(lad[li].id); break; }
+        }
+    }
+    var extra: any = { scale: String(f.scale || '') };
+    if (kd === 'character' && target) {
+        if (link === 'home') extra.home = String(target.id);
+        if (link === 'faction') extra.factionId = String(target.id);
+    }
+    var ctx: any = await _ceSeedContext(parentId, rungId, kd, '', '', String(row.listId || ''), extra);
+    var patch: any = { description: line };
+    if (rungId) patch[CE_DRAFT_RUNG_KEY] = rungId;
+    if (ctx.defs.length || ctx.classic) {
+        var got: any = await _ceSeedOne(ctx.genBase, ctx.params, ctx.defs,
+            ceSeedAsk(ctx.noun, name, intent, !!ctx.classic), 'gen', kd, !!ctx.classic);
+        if (got) {
+            var sp: any = _ceSeedPatch(got, ctx.defs, false);
+            for (var pk in sp) patch[pk] = sp[pk];
+            if (!String(patch.description || '').trim()) patch.description = line;
+        }
+    }
+    patch.makeErr = '';
+    // A character whose seed answered nothing falls to the commit's own field extraction,
+    // which reads `dump`; it reads what was said rather than an empty string.
+    if (kd === 'character') patch.dump = intent;
+    await ceScopeRowWriteMany(String(row.id), patch);
+    var n = await commitStagedDrafts(kd, [String(row.id)]);
+    if (!n) return 'It could not be saved as a record.';
+    var newId = '';
+    var after = await loadWizardDrafts();
+    for (i = 0; i < after.length; i++) {
+        if (String(after[i].id) === String(row.id)) { newId = _cePlanDone(after[i]); break; }
+    }
+    if (!newId) return 'It was saved, but its record could not be found to link.';
+    madeBy[ceNameNormalise(name)] = { id: newId, kind: kd, name: name };
+    // Links that only exist once the record does.
+    if (target && link === 'holder') {
+        try { await ceEntityWrite(newId, 'parentId', String(target.id)); } catch (eLh) {}
+    }
+    if (target && kd === 'character' && (link === 'home' || link === 'faction')) {
+        try {
+            var ch: any = await loadCharacter(newId);
+            if (ch) {
+                if (link === 'home') ch.homeLocationId = String(target.id);
+                if (link === 'faction') ch.factionId = String(target.id);
+                await saveCharacter(ch);
+            }
+            if (link === 'home') { try { await ceEntityWrite(newId, 'parentId', String(target.id)); } catch (eLb) {} }
+        } catch (eLc) { api.v1.error('[AE:plan] character link failed:', eLc); }
+    }
+    return '';
+}
+
+// ── The stage ─────────────────────────────────────────────────────────────────
+// Published by cePublishBuild for the 'plan' stage.
+async function cePlanPublishRows(): Promise<any> {
+    var all = await loadWizardDrafts();
+    var rows: any[] = [], left: any[] = [], made: any[] = [];
+    var eIdx: any[] = await loadEntityIndex();
+    var ents = _ceEntListBuild(eIdx);
+    var entBy: any = {};
+    for (var e = 0; e < ents.length; e++) entBy[String(ents[e].id)] = ents[e];
+    var cIdx: any[] = await loadIndex();
+    var briefBy: any = {};
+    for (var ci = 0; ci < cIdx.length; ci++) { if (cIdx[ci]) briefBy[String(cIdx[ci].id)] = String(cIdx[ci].briefDescription || ''); }
+    // Every name an INSIDE can resolve to, so a row can say when its INSIDE will link nothing.
+    var known: any = {};
+    var rec = await _cePlanRecorded();
+    var kk: string;
+    for (kk in rec.byNorm) known[kk] = true;
+    for (var ai = 0; ai < all.length; ai++) {
+        var an = ceNameNormalise(String((all[ai].fields && all[ai].fields.name) || ''));
+        if (an && _cePlanIsRow(all[ai]) && String(all[ai].kind) !== 'planleft') known[an] = true;
+    }
+    for (var i = 0; i < all.length; i++) {
+        var d: any = all[i];
+        if (!_cePlanIsRow(d)) continue;
+        if (String(d.kind) === 'planleft') { left.push({ id: String(d.id), thing: String(d.fields.thing || ''),
+                                                         said: _cePlanQuotes(String(d.fields.said || '')) }); continue; }
+        var pk: any = _cePlanKindFor(String(d.kind), String(d.listId || ''));
+        var done = _cePlanDone(d);
+        if (done) {
+            var em: any = entBy[done] || {};
+            made.push({ id: done, name: String(d.fields.name || em.name || 'Unnamed'), type: String(d.kind),
+                        icon: String(em.icon || ''), parentName: String(em.parentName || ''),
+                        childCount: Number(em.childCount) || 0,
+                        line: _ceDigestCut(String(d.kind) === 'character' ? String(briefBy[done] || '')
+                                                                         : String(d.fields.description || ''), 140) });
+            continue;
+        }
+        rows.push({ id: String(d.id), kind: String(d.kind), word: pk ? String(pk.word) : String(d.kind),
+                    group: pk ? String(pk.group) : String(d.kind), list: String(d.listId || ''),
+                    name: String(d.fields.name || ''), thing: String(d.fields.thing || ''),
+                    line: String(d.fields.line || ''), said: _cePlanQuotes(String(d.fields.said || '')),
+                    inside: String(d.fields.insideName || ''), scale: String(d.fields.scale || ''),
+                    insideKnown: !String(d.fields.insideName || '').trim()
+                                 || !!known[ceNameNormalise(String(d.fields.insideName || ''))],
+                    planned: String(d.fields.planned || '') === '1', exists: String(d.fields.exists || ''),
+                    err: String(d.fields.makeErr || '') });
+    }
+    return { rows: rows, left: left, made: made };
+}
+
+function _cePlanRow(r: any, openMap: any): any {
+    var rid = String(r.id);
+    var oid = 'planrow:' + rid;
+    var open = !!(openMap && openMap[oid]);
+    var bits: string[] = [];
+    if (r.exists) bits.push('already in your world');
+    if (r.inside) bits.push((r.kind === 'location' || r.kind === 'faction') ? ('in ' + r.inside) : ('belongs to ' + r.inside));
+    if (r.kind === 'location' && r.scale) bits.push(r.scale);
+    if (r.line) bits.push(r.line);
+    var title = r.name || (r.thing ? ('(named at Make) ' + r.thing) : '(named at Make)');
+    var kids: any[] = [
+        ceRow(title, null, ceInline({ gap: CE_T.s1 }, [
+            r.exists ? null : ceToggle(!!r.planned, 'plan:on:' + rid, function() {
+                return ceBuildOp(function() { return ceScopeRowWriteMany(rid, { planned: r.planned ? '0' : '1' }); })
+                    .then(cePublishBuild);
+            }, (r.planned ? 'Leave out ' : 'Make ') + title),
+            ceIconBtn('Remove ' + title, ceIconTrash(), 'plan:del:' + rid, function() {
+                return ceBuildOp(function() { return cePlanRowRemove(rid); }).then(cePublishBuild);
+            }, 'danger')
+        ])),
+        bits.length ? ceSub('t3', bits.join('  \u00b7  ')) : null,
+        (r.inside && !r.insideKnown)
+            ? ceSub('t2', r.inside + ' is not in your world or this plan, so this will not be linked to it. '
+                + 'Add it below, or change Inside.') : null,
+        r.err ? ceSub('t2', 'Not made: ' + r.err) : null
+    ];
+    kids.push(ceExpandRow({ id: oid, key: 'px:' + rid, label: 'What was said, and the row',
+        open: open, solo: 'planrow:', meta: String(r.said.length),
+        children: open ? ceStack(CE_T.s2, [
+            r.said.length ? ceWell({ key: 'pq:' + rid, text: '\u201c' + r.said.join('\u201d\n\u201c') + '\u201d' })
+                          : ceSub('t3', 'Added by hand, so nothing was said about it yet.'),
+            h(ceField, { key: 'pfn:' + rid, k: 'plan:name:' + rid, label: 'Name', value: r.name,
+                placeholder: 'Leave empty to have it named at Make',
+                onCommit: function(v: string) {
+                    return ceBuildOp(function() { return ceScopeRowWriteMany(rid, { name: String(v || '').trim() }); })
+                        .then(cePublishBuild);
+                } }),
+            h(ceField, { key: 'pfl:' + rid, k: 'plan:line:' + rid, label: 'What it is', value: r.line, multiline: true, rows: 2,
+                placeholder: 'One sentence, used when its questions are answered',
+                onCommit: function(v: string) {
+                    return ceBuildOp(function() { return ceScopeRowWriteMany(rid, { line: String(v || '').trim() }); })
+                        .then(cePublishBuild);
+                } }),
+            h(ceField, { key: 'pfi:' + rid, k: 'plan:in:' + rid, label: 'Inside or belongs to', value: r.inside,
+                placeholder: 'A name from your world or this plan, or empty',
+                onCommit: function(v: string) {
+                    return ceBuildOp(function() { return ceScopeRowWriteMany(rid, { insideName: String(v || '').trim() }); })
+                        .then(cePublishBuild);
+                } }),
+            r.kind === 'location' ? ceRow('Scale', ceSub('t2', r.scale || 'region'),
+                ceBtn('Change', 'plan:scale:' + rid, function() {
+                    cePickerOpen('planScale', { id: rid, cur: r.scale || 'region' });
+                    return Promise.resolve();
+                })) : null
+        ]) : null }));
+    return ceWrap({ key: 'pr:' + rid }, [ceStack(CE_T.s1, kids)]);
+}
+
+function _ceBuildPlan(st: any, openMap: any): any {
+    var rows: any[] = st.planRows || [];
+    var left: any[] = st.planLeft || [];
+    var made: any[] = st.planMade || [];
+    var note = String(st.planNote || '');
+    var ticked = 0;
+    for (var i = 0; i < rows.length; i++) { if (rows[i].planned && !rows[i].exists) ticked++; }
+    var groups: any[] = [];
+    var kinds = _cePlanKindsOn(st.charter || null);
+    for (var k = 0; k < kinds.length; k++) {
+        var kw = String(kinds[k].word);
+        var mine: any[] = [];
+        var on = 0;
+        for (i = 0; i < rows.length; i++) {
+            if (rows[i].word !== kw) continue;
+            mine.push(_cePlanRow(rows[i], openMap));
+            if (rows[i].planned && !rows[i].exists) on++;
+        }
+        groups.push(ceGroup(String(kinds[k].group) + (mine.length ? (' (' + String(on) + ' of ' + String(mine.length) + ')') : ''),
+            ceStack(CE_T.s3, [
+                mine.length ? ceStack(CE_T.s3, mine) : null,
+                ceBtn('+ Add one', 'plan:add:' + kw, function() {
+                    return ceBuildOp(function() { return cePlanRowAdd(kw); }).then(cePublishBuild);
+                })
+            ])));
+    }
+    var leftKids: any[] = [];
+    for (i = 0; i < left.length; i++) {
+        leftKids.push((function(l: any) {
+            return ceRow(l.thing || 'something', ceSub('t3', l.said.length ? ('\u201c' + l.said[l.said.length - 1] + '\u201d') : ''),
+                ceBtn('Add it anyway', 'plan:leftadd:' + l.id, function() {
+                    cePickerOpen('planKind', { leftId: String(l.id) });
+                    return Promise.resolve();
+                }));
+        })(left[i]));
+    }
+    var madeKids: any[] = [];
+    for (i = 0; i < made.length; i++) {
+        madeKids.push((function(m: any) {
+            return ceWrap({ key: 'pm:' + m.id }, [_ceBuildRecHead(m, ceBtn('Open', 'plan:open:' + m.id, function() {
+                ceNavRecord(String(m.type), String(m.id), '', { surface: 'build', entityId: '', label: 'Build' });
+                return Promise.resolve();
+            }))]);
+        })(made[i]));
+    }
+    return ceStack(CE_T.s2, [
+        // [BUILD-COPY]
+        ceStagePreamble('Plan and make',
+            'Lists the things your conversation settled, by kind. Tick what should exist, fix what '
+            + 'is wrong, and make them all at once.',
+            'Make names anything unnamed, answers each one\u2019s questions from what you said, '
+            + 'and turns them into records.'),
+        ceBand(1, 'Read the conversation', { state: rows.length ? 'done' : 'open' }, ceStack(CE_T.s2, [
+            ceBtn(rows.length ? 'Plan again from the conversation' : 'Plan from the conversation',
+                'plan:run', function() {
+                    return ceBuildOp(function() { return cePlanRun(); }).then(function(msg: any) {
+                        try { api.v1.ui.toast(String(msg), { type: 'success', autoClose: 6000 }); } catch (_ePt) {}
+                        return cePublishBuild();
+                    });
+                }, rows.length ? undefined : 'primary', 'Reading\u2026'),
+            ceSub('t3', 'Reads the World conversation. A second press adds what is new; ticks and edits on '
+                + 'the rows already here are kept.')
+        ])),
+        ceBand(2, 'What will be made', { state: rows.length ? 'open' : 'waiting', count: String(ticked) },
+            ceStack(CE_T.s4, groups.concat([
+                leftKids.length ? ceGroup('Left out', ceStack(CE_T.s2, [
+                    ceSub('t3', 'You raised these and dropped them. If one should exist after all, add it.'),
+                    ceStack(CE_T.s2, leftKids)
+                ])) : null
+            ]))),
+        ceBand(3, 'Make', { state: ticked ? 'open' : 'waiting' }, ceStack(CE_T.s2, [
+            note ? ceSub('t2', note) : null,
+            ceBtn('Make ' + String(ticked), 'plan:make', function() {
+                return ceBuildOp(function() { return cePlanMake(); }).then(function(msg: any) {
+                    try { api.v1.ui.toast(String(msg), { type: 'success', autoClose: 6000 }); } catch (_ePm) {}
+                    return cePublishBuild();
+                });
+            }, ticked ? 'primary' : undefined, 'Making\u2026'),
+            _cePlanBusy ? ceBtn('Stop after this one', 'plan:stop', function() { _cePlanStop = true; return Promise.resolve(); }) : null,
+            ceSub('t3', 'Saves the world to Memory first, then makes places before what is inside them. '
+                + 'A row that fails stays here with its reason; press Make again to retry it.')
+        ])),
+        made.length ? ceBand(4, 'Made', { state: 'done', count: String(made.length) },
+            ceStack(null, madeKids)) : null
+    ]);
+}
+
+// ============================================================================
 // SECTION BENCH — PROMPT BENCH  [BENCH]
 //
 // A PROMPT IS TESTED BY WHAT IT DOES, NEVER BY ITS TEXT. Each test runs one live prompt through
@@ -76638,6 +77612,92 @@ function _ceBenchWorldRun(qid: string): Promise<any> {
     });
 }
 
+// [BENCH-FIXTURE] The plan conversation: a salt-marsh coast. Every test below reads the same
+// reply, and each checks one decision on one thing: two names for one barn, a bridge raised
+// and dropped, a guild and one of its wardens, a wagon people live on beside a whistle someone
+// carries, four farms nobody named, and who the whistle belongs to.
+var CE_BENCH_PLAN_TURNS: any[] = [
+    { id: 'bp1', role: 'user', text: 'A story on a salt-marsh coast, where families rake salt '
+        + 'from the tidal pans and send it inland.' },
+    { id: 'bp2', role: 'assistant', text: 'Who controls the salt once it leaves the pans? A '
+        + 'guild, a lord, or nobody at all?' },
+    { id: 'bp3', role: 'user', text: 'The Reed Wardens, a guild that patrols the causeways and '
+        + 'takes a tithe from every cart. Ilse is their youngest warden, and she is quietly '
+        + 'smuggling salt for her uncle.' },
+    { id: 'bp4', role: 'assistant', text: 'How does the salt get inland? A bridge, a road, '
+        + 'boats?' },
+    { id: 'bp5', role: 'user', text: 'I thought about a toll bridge over the river mouth, but '
+        + 'drop the bridge. The salt goes out on the Brine Wagon, a huge wheeled house drawn by '
+        + 'oxen, and whole families live aboard it as it crawls along the causeway.' },
+    { id: 'bp6', role: 'assistant', text: 'And where does the salt wait before the Wagon takes '
+        + 'it?' },
+    { id: 'bp7', role: 'user', text: 'Hobb\u2019s Barn. Everyone calls it the granary, though '
+        + 'it has never held grain. It stands among four salt farms I have not named yet. Ilse '
+        + 'carries a bone whistle her mother left her, for calling the other wardens.' }
+];
+// [BENCH-FIXTURE] "nothing"'s pair: a conversation about tone and nothing else.
+var CE_BENCH_PLAN_TONE: any[] = [
+    { id: 'bt1', role: 'user', text: 'I want this to feel slow and damp, like a long winter. '
+        + 'Short chapters, and nobody gets a happy ending.' },
+    { id: 'bt2', role: 'assistant', text: 'So the weather carries the mood. Should the prose '
+        + 'stay close on one person, or move around?' },
+    { id: 'bt3', role: 'user', text: 'Close, and plain. No grand speeches.' }
+];
+
+// [BENCH-SHARE] ONE REPLY, READ BY EVERY TEST OF THE FIXTURE. Run n of each test reads run n
+// of the pass, so a suite costs one pass per run rather than one per test, and the six counts
+// describe the same twenty replies. Cleared when a test or suite is started.
+var _ceBenchShare: any = {};
+
+function _ceBenchPlanRun(turns: any[], tag: string, n: number): Promise<any> {
+    var key = String(tag) + ':' + String(n);
+    if (_ceBenchShare[key]) return Promise.resolve(_ceBenchShare[key]);
+    var head = ceBuildHead({ family: 'chat', world: ceWorldSpanFrom('', []) });
+    var base = ceBuildChatMessagesFrom(head, ceWorldChatBlockFrom([], _ceBuildKindLabels(null)), turns);
+    return cePlanRunFrom(base, _cePlanKindsOn(null), []).then(function(out: any) {
+        var lines: string[] = [];
+        var i = 0;
+        for (i = 0; i < out.kept.length; i++) {
+            var r: any = out.kept[i];
+            lines.push(String(r.word) + ' | ' + (r.name || '(unnamed)') + ' | x' + String(r.count)
+                       + (r.inside ? (' | in ' + r.inside) : '') + (r.scale ? (' | ' + r.scale) : ''));
+        }
+        for (i = 0; i < out.left.length; i++) lines.push('left out | ' + String(out.left[i].thing));
+        for (i = 0; i < out.errors.length; i++) lines.push('unread | ' + String(out.errors[i]));
+        var got: any = { kept: out.kept, left: out.left, errors: out.errors,
+                         text: 'Read as:\n' + (lines.length ? lines.join('\n') : '(nothing)')
+                             + '\n\n' + out.raw.join('\n\n--- repair ---\n\n') };
+        _ceBenchShare[key] = got;
+        return got;
+    });
+}
+
+// The kept rows whose name or words contain `bit` and none of `not`.
+function _ceBenchPlanFind(r: any, bit: string, not?: string[]): any[] {
+    var out: any[] = [];
+    var no: string[] = not || [];
+    for (var i = 0; i < r.kept.length; i++) {
+        var hay = (String(r.kept[i].name || '') + ' ' + String(r.kept[i].thing || '')).toLowerCase();
+        if (hay.indexOf(bit) < 0) continue;
+        var skip = false;
+        for (var j = 0; j < no.length; j++) { if (hay.indexOf(no[j]) >= 0) { skip = true; break; } }
+        if (!skip) out.push(r.kept[i]);
+    }
+    return out;
+}
+function _ceBenchPlanOne(r: any, bit: string, what: string, not?: string[]): any {
+    var f = _ceBenchPlanFind(r, bit, not);
+    if (!f.length) return { row: null, why: 'no row for ' + what };
+    if (f.length > 1) return { row: null, why: String(f.length) + ' rows for ' + what };
+    return { row: f[0], why: '' };
+}
+function _ceBenchPlanIs(r: any, bit: string, what: string, word: string, not?: string[]): any {
+    var o = _ceBenchPlanOne(r, bit, what, not);
+    if (!o.row) return o;
+    if (String(o.row.word) !== word) return { row: null, why: what + ' is ' + String(o.row.word) };
+    return o;
+}
+
 function _ceBenchVerdict(ok: boolean, why: string): any { return { ok: !!ok, why: String(why || '') }; }
 
 // THE SUITES. A test is an id, a label, its contract in one sentence, a run that calls the live
@@ -76688,6 +77748,77 @@ var CE_BENCH_SUITES: any[] = [
               if (r.value === null) return _ceBenchVerdict(false, 'unreadable, twice');
               return _ceBenchVerdict(String(r.value || '') === '',
                                      String(r.value || '') ? 'wrote an answer' : 'none');
+          } }
+      ] },
+    { id: 'plan', label: 'Plan',
+      note: 'Listing the things a conversation settled. The six tests read the same twenty '
+          + 'replies; Nothing reads its own. Run this suite in an empty story: '
+          + 'the live pass carries the open story\u2019s context, and so does this.',
+      tests: [
+        { id: 'twonames', label: 'One thing, two names',
+          contract: 'Hobb\u2019s Barn, which everyone calls the granary, is one Place row, and the '
+                  + 'granary is not listed again on its own.',
+          run: function(n: number) { return _ceBenchPlanRun(CE_BENCH_PLAN_TURNS, 'salt', n); },
+          check: function(r: any) {
+              var o = _ceBenchPlanIs(r, 'hobb', 'the barn', 'Place');
+              if (!o.row) return _ceBenchVerdict(false, o.why);
+              var g = _ceBenchPlanFind(r, 'granary', ['hobb']);
+              return _ceBenchVerdict(!g.length, g.length ? 'the granary listed apart' : 'one row');
+          } },
+        { id: 'rejected', label: 'Raised and dropped',
+          contract: 'The toll bridge the author dropped is not on the list of things to make.',
+          run: function(n: number) { return _ceBenchPlanRun(CE_BENCH_PLAN_TURNS, 'salt', n); },
+          check: function(r: any) {
+              var b = _ceBenchPlanFind(r, 'bridge');
+              return _ceBenchVerdict(!b.length, b.length ? 'the bridge is kept' : 'left out');
+          } },
+        { id: 'group', label: 'A group and one of its members',
+          contract: 'The Reed Wardens are a Group and Ilse is a Character.',
+          run: function(n: number) { return _ceBenchPlanRun(CE_BENCH_PLAN_TURNS, 'salt', n); },
+          check: function(r: any) {
+              var g = _ceBenchPlanIs(r, 'warden', 'the Reed Wardens', 'Group', ['ilse']);
+              if (!g.row) return _ceBenchVerdict(false, g.why);
+              var c = _ceBenchPlanIs(r, 'ilse', 'Ilse', 'Character', ['whistle']);
+              return _ceBenchVerdict(!!c.row, c.row ? 'Group and Character' : c.why);
+          } },
+        { id: 'vessel', label: 'Lived in, or carried',
+          contract: 'The Brine Wagon, which families live aboard, is a Place; the bone whistle Ilse '
+                  + 'carries is an Object.',
+          run: function(n: number) { return _ceBenchPlanRun(CE_BENCH_PLAN_TURNS, 'salt', n); },
+          check: function(r: any) {
+              var w = _ceBenchPlanIs(r, 'wagon', 'the Brine Wagon', 'Place');
+              if (!w.row) return _ceBenchVerdict(false, w.why);
+              var o = _ceBenchPlanIs(r, 'whistle', 'the whistle', 'Object');
+              return _ceBenchVerdict(!!o.row, o.row ? 'Place and Object' : o.why);
+          } },
+        { id: 'count', label: 'Four, unnamed',
+          contract: 'The four salt farms are one Place row with COUNT 4 and no name.',
+          run: function(n: number) { return _ceBenchPlanRun(CE_BENCH_PLAN_TURNS, 'salt', n); },
+          check: function(r: any) {
+              var f = _ceBenchPlanIs(r, 'farm', 'the farms', 'Place');
+              if (!f.row) return _ceBenchVerdict(false, f.why);
+              if (Number(f.row.count) !== 4) return _ceBenchVerdict(false, 'count ' + String(f.row.count));
+              return _ceBenchVerdict(!String(f.row.name || ''), f.row.name ? ('named ' + f.row.name) : 'four, unnamed');
+          } },
+        { id: 'belongs', label: 'Whose it is',
+          contract: 'The whistle is inside Ilse, and Ilse is inside the Reed Wardens.',
+          run: function(n: number) { return _ceBenchPlanRun(CE_BENCH_PLAN_TURNS, 'salt', n); },
+          check: function(r: any) {
+              var o = _ceBenchPlanOne(r, 'whistle', 'the whistle');
+              if (!o.row) return _ceBenchVerdict(false, o.why);
+              if (String(o.row.inside || '').toLowerCase().indexOf('ilse') < 0) {
+                  return _ceBenchVerdict(false, 'whistle inside ' + (o.row.inside || '(top)'));
+              }
+              var c = _ceBenchPlanOne(r, 'ilse', 'Ilse', ['whistle']);
+              if (!c.row) return _ceBenchVerdict(false, c.why);
+              var ok = String(c.row.inside || '').toLowerCase().indexOf('warden') >= 0;
+              return _ceBenchVerdict(ok, ok ? 'both placed' : ('Ilse inside ' + (c.row.inside || '(top)')));
+          } },
+        { id: 'nothing', label: 'Nothing to make',
+          contract: 'A conversation only about tone lists nothing to make.',
+          run: function(n: number) { return _ceBenchPlanRun(CE_BENCH_PLAN_TONE, 'tone', n); },
+          check: function(r: any) {
+              return _ceBenchVerdict(!r.kept.length, r.kept.length ? (String(r.kept.length) + ' kept') : 'none');
           } }
       ] }
 ];
@@ -76793,7 +77924,7 @@ async function _ceBenchRunOne(sid: string, tid: string): Promise<string> {
         _ceBench.note = String(f.test.label) + ': run ' + String(n + 1) + ' of ' + String(CE_BENCH_RUNS);
         _ceBenchPublish();
         try {
-            var out: any = await f.test.run();
+            var out: any = await f.test.run(n);   // [BENCH-SHARE] run n reads shared reply n
             var v: any = f.test.check(out) || _ceBenchVerdict(false, 'no verdict');
             res.runs.push({ ok: !!v.ok, why: String(v.why || ''), text: String((out && out.text) || '') });
             if (!v.ok) res.failed++;
@@ -76823,6 +77954,7 @@ async function ceBenchRunTest(sid: string, tid: string): Promise<void> {
     if (_ceBench.busy) { _ceBench.note = 'One test at a time.'; _ceBenchPublish(); return; }
     _ceBench.busy = true;
     _ceBench.stop = false;
+    _ceBenchShare = {};                                     // [BENCH-SHARE]
     try {
         await ceBenchLoad();
         var f: any = _ceBenchFind(sid, tid);
@@ -76846,6 +77978,7 @@ async function ceBenchRunSuite(sid: string): Promise<void> {
     if (!su) return;
     _ceBench.busy = true;
     _ceBench.stop = false;
+    _ceBenchShare = {};                                     // [BENCH-SHARE]
     try {
         await ceBenchLoad();
         var lines: string[] = [];
