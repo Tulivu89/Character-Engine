@@ -4,9 +4,9 @@ id: ce000002-0000-0000-0000-000000000001
 name: Character Engine
 createdAt: 1776400000000
 updatedAt: 1793000000000
-version: 3.14.14
+version: 3.14.15
 author: AmbiProp
-description: Character Engine v3.14.14
+description: Character Engine v3.14.15
 memoryLimit: 128
 ---*/
 
@@ -110,9 +110,9 @@ memoryLimit: 128
 //                           and the ccchat route
 //   BUILDCHAT         2934  build chats [BUILD-CHAT] -- one transcript per scope, never WIZLIVE's path;
 //                           the world, name and seed passes that read them live here too
-//   PLAN               904  the list of things, the plan and Make [PLAN] -- one read of the
+//   PLAN               975  the list of things, the plan and Make [PLAN] -- one read of the
 //                           World conversation into rows, ticked and made in one press
-//   BENCH              588  prompt bench [BENCH] -- live prompts on fixed inputs, counted per run;
+//   BENCH              636  prompt bench [BENCH] -- live prompts on fixed inputs, counted per run;
 //                           the Settings > Bench tab
 //
 // The KIT-* family is the jsx kit, in dependency order: tokens, then stores, then the
@@ -6434,6 +6434,9 @@ function _ceGenFailKind(e: any): 'transport' | 'model' {
     if (fkMsg.indexOf('network') >= 0) return 'transport';
     if (fkMsg.indexOf('timeout') >= 0) return 'transport';
     if (fkMsg.indexOf('timed out') >= 0) return 'transport';
+    // "Error in input stream" is the reply breaking off in transit. Measured on the 3.14.14
+    // bench, where it was counted as an answer the prompt got wrong.
+    if (fkMsg.indexOf('stream') >= 0) return 'transport';
     return 'model';
 }
 
@@ -6655,6 +6658,10 @@ var CE_HELP_PING_MS   = 700;
 var CE_HELP_RUN_MS    = 120000;
 // Used when a caller passes no max_tokens.
 var CE_HELP_NEED_DEF  = 400;
+// [HELP-DEAD-ONCE] Added to the ceiling for every token asked for past CE_HELP_NEED_DEF. A
+// 1400-token Plan reply timed out at 120s on the 3.14.14 bench and took the helper out of the
+// pick with it; a long reply is not a dead helper.
+var CE_HELP_RUN_PER_TOK_MS = 100;
 // [HELP-LOCAL-DRY] How long the local allowance is left alone after it refuses a call.
 var CE_HELP_DRY_MS    = 240000;
 
@@ -6932,9 +6939,11 @@ async function _ceHelpExecute(hxRun: CEHelperRec, method: 'direct' | 'story', ta
             if (runExtra && runExtra.probe === true) hxRunMsg.probe = true;
             var hxSendErr = _ceHelpSend(hxRun.sid, hxRunMsg);
             if (hxSendErr) { hxFinish({ ok: false, err: 'helper send failed: ' + hxSendErr }); return; }
-            api.v1.timers.sleep(CE_HELP_RUN_MS).then(function() {
+            var hxNeed = Number(params && params.max_tokens) || CE_HELP_NEED_DEF;
+            var hxCeil = CE_HELP_RUN_MS + Math.max(0, hxNeed - CE_HELP_NEED_DEF) * CE_HELP_RUN_PER_TOK_MS;
+            api.v1.timers.sleep(hxCeil).then(function() {
                 hxFinish({ ok: false, timeout: true,
-                           err: 'helper timed out after ' + String(Math.round(CE_HELP_RUN_MS / 1000)) + 's' });
+                           err: 'helper timed out after ' + String(Math.round(hxCeil / 1000)) + 's' });
             }).catch(function() {});
         });
     } finally {
@@ -76617,15 +76626,17 @@ function ceBuildChatRegen(scope: string, block: string): Promise<BuildChat> {
 var CE_P_PLAN_LINES: string[] = [
     "The conversation above is finished. Nothing you write now is read by a person; it is stored. Do not ask a question or address anyone.",
     "",
-    "List the specific things the author has settled should exist in this world. Work through one thing at a time. For each thing, answer the steps below in order, one line per step, each line starting with its label.",
+    "List the specific things the author has settled should exist in this world. A thing is listed when the story can point at it: it has a name, or it is one particular thing (\"the harbourmaster\", \"the old mill\"), or the author gave a number of them (\"three crews\"). A kind of thing that is simply part of the background (\"the fishermen\", \"the gulls\", \"the tide\") is not listed, and nothing is written for it.",
+    "",
+    "Work through one thing at a time. For each thing, answer the steps below in order, one line per step, each line starting with its label.",
     "",
     "THING: the words the author first used for it.",
     "SAID: every place in the conversation that mentions it, quoted, separated by \" / \". Include mentions under other names and descriptions of the same thing.",
     "SETTLED: from SAID, did the author propose it or agree to it, and not drop or replace it later? Write what SAID shows, then YES or NO. If NO, the block ends here; go to the next thing.",
     "KIND: from SAID, write what the thing is or does, then one of: {KINDWORDS}",
     "NAME: the name exactly as the author spelled it. If the author gave it no name: (unnamed)",
-    "COUNT: when the author gave a number of unnamed ones (\"three crews\"), that number. Otherwise 1.",
-    "INSIDE: from SAID, the name of the thing it sits inside or belongs to, as the author placed it. If SAID does not place it inside anything: (top)",
+    "COUNT: the number the author gave, as a number, when they gave one (\"three crews\" is 3). Otherwise 1.",
+    "INSIDE: from SAID, the thing it sits inside or belongs to, as the author placed it: that thing's NAME, or its THING words if it has no name. If SAID does not place it inside anything: (top)",
     "SCALE: only when KIND is Place. From SAID and INSIDE, write what it is, then one of: {SCALEWORDS}. If nothing in SAID or INSIDE shows its size: region when INSIDE is (top), otherwise structure.",
     "LINE: one sentence saying what it is, using only what SAID shows.",
     "",
@@ -76849,6 +76860,27 @@ function _cePlanQuotes(said: string): string[] {
     return out;
 }
 
+// [PLAN-CODE] COUNT IS READ, NEVER REJECTED. The prompt's own default is 1, so a COUNT with no
+// number in it ("(unspecified)", "several") is 1, applied here. Rejecting it sent the model a
+// repair that said "a number from 1 to 24" and it answered 24, which planned twenty-four
+// unnamed families. A number past the cap is held at the cap: rows are made one call each.
+var CE_PLAN_COUNT_MAX = 24;
+var CE_PLAN_NUMBER_WORDS: any = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7,
+    eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, dozen: 12, twenty: 20 };
+function _cePlanCount(raw: string): number {
+    var s = _cePlanTail(String(raw || '')).toLowerCase();
+    var m = /(\d+)/.exec(s);
+    var n = m ? Number(m[1]) : 0;
+    if (!n) {
+        var w = s.split(/[^a-z]+/);
+        for (var i = w.length - 1; i >= 0; i--) {
+            if (CE_PLAN_NUMBER_WORDS[w[i]]) { n = Number(CE_PLAN_NUMBER_WORDS[w[i]]); break; }
+        }
+    }
+    if (!(n >= 1)) return 1;
+    return Math.min(n, CE_PLAN_COUNT_MAX);
+}
+
 // One block, checked. Returns { ok, kept, left, error, row } where row is the clean reading.
 function cePlanCheck(b: any, kinds: any[]): any {
     var thing = String(b.THING || '').trim();
@@ -76873,15 +76905,7 @@ function cePlanCheck(b: any, kinds: any[]): any {
         return { ok: false, error: 'KIND for "' + thing + '" is "' + kWord + '", which is not one of: '
                  + words.join(', ') + '. Choose the one that fits what SAID shows.' };
     }
-    var countRaw = String(b.COUNT || '').trim();
-    var count = 1;
-    if (countRaw) {
-        var cm = /(\d+)\s*$/.exec(countRaw.replace(/[.\s]+$/, ''));
-        count = cm ? Number(cm[1]) : NaN;
-        if (!(count >= 1 && count <= 24)) {
-            return { ok: false, error: 'COUNT for "' + thing + '" must be a number from 1 to 24.' };
-        }
-    }
+    var count = _cePlanCount(String(b.COUNT || ''));   // [PLAN-CODE] read, never rejected
     var name = _cePlanTail(String(b.NAME || ''));
     if (/^\(?\s*unnamed\s*\)?$/i.test(name)) name = '';
     var inside = _cePlanTail(String(b.INSIDE || ''));
@@ -76911,6 +76935,29 @@ function cePlanCheck(b: any, kinds: any[]): any {
         name: name, count: count, inside: inside, scale: scale, line: String(b.LINE || '').trim() } };
 }
 
+// [PLAN-MORE] A REPLY CUT OFF AT max_tokens IS CONTINUED, NEVER READ AS THE WHOLE LIST.
+// A longer conversation settles more things than one reply holds, and a cut-off list is
+// indistinguishable from a short one. So a cut reply's last block is dropped (it may be half
+// written), the reply goes back as an assistant turn, and the model carries on from that
+// thing. A block whose THING was already read is not read twice. NAI reports the cut as
+// finish_reason 'length'; a reply with no finish_reason whose last block was kept but has no
+// LINE is treated as cut too, because a helper's reply may not carry the field.
+var CE_PLAN_MORE_MAX = 3;
+var CE_P_PLAN_MORE =
+    'You were cut off. Carry on with the list: start again at the thing you were writing when '
+  + 'you stopped, with its THING line, and do not repeat any thing already written above.';
+
+function _cePlanCut(res: any, blocks: any[]): boolean {
+    var ch: any = (res && res.choices && res.choices[0]) || null;
+    var fr = ch ? ch.finish_reason : undefined;
+    if (fr === 'length') return true;
+    if (fr !== undefined && fr !== null && String(fr) !== '') return false;
+    var last: any = blocks.length ? blocks[blocks.length - 1] : null;
+    if (!last) return false;
+    var v = String(last.SETTLED || '').trim().toUpperCase();
+    return /YES[.\s]*$/.test(v) && !String(last.LINE || '').trim();
+}
+
 // The pass, as a function of its inputs, so the bench feeds it a fixture [BENCH-INPUTS].
 // One retry carries every rejection at once, with the rejected reply above it as a real
 // assistant turn; blocks that passed are kept either way. A transport failure throws.
@@ -76921,13 +76968,37 @@ async function cePlanRunFrom(base: any[], kinds: any[], recorded: string[]): Pro
     var params = cePlanParams();
     var msgs = base.slice(0);
     msgs.push({ role: 'user', content: cePlanAsk(kinds, recorded) });
-    var res: any = await aeDiagGenerateWithStory('plan:things', msgs, params,
-                                                 undefined, undefined, 'background');
-    var raw = ceGenText(res);
-    var out: any = { kept: [], left: [], errors: [], raw: [raw] };
-    var blocks = cePlanParse(raw);
+    var out: any = { kept: [], left: [], errors: [], raw: [], parts: 0 };
+    var blocks: any[] = [];
+    var seen: any = {};
+    var raw = '';
+    var i = 0;
+    for (var part = 0; part <= CE_PLAN_MORE_MAX; part++) {
+        var res: any = await aeDiagGenerateWithStory(part ? 'plan:things:more' : 'plan:things', msgs,
+                                                     params, undefined, undefined, 'background');
+        raw = ceGenText(res);
+        out.raw.push(raw);
+        out.parts = part + 1;
+        var got = cePlanParse(raw);
+        var cut = _cePlanCut(res, got);
+        if (cut && got.length) got.pop();
+        for (i = 0; i < got.length; i++) {
+            var gk = ceNameNormalise(String(got[i].THING || ''));
+            if (!gk || seen[gk]) continue;
+            seen[gk] = true;
+            blocks.push(got[i]);
+        }
+        if (!cut) break;
+        if (part === CE_PLAN_MORE_MAX) {
+            out.errors.push('The list was still going after ' + String(part + 1)
+                            + ' replies; anything after that was not read.');
+            break;
+        }
+        msgs.push({ role: 'assistant', content: raw });
+        msgs.push({ role: 'user', content: CE_P_PLAN_MORE });
+    }
     var bad: any[] = [];
-    for (var i = 0; i < blocks.length; i++) {
+    for (i = 0; i < blocks.length; i++) {
         var r: any = cePlanCheck(blocks[i], kinds);
         if (!r.ok) { bad.push({ thing: String(blocks[i].THING || ''), error: r.error }); continue; }
         if (r.kept) out.kept.push(r.row); else out.left.push(r.row);
@@ -77133,6 +77204,8 @@ async function cePlanMake(): Promise<string> {
         for (i = 0; i < rows.length; i++) {
             var rn = ceNameNormalise(String(rows[i].fields.name || ''));
             if (rn) byName[rn] = rows[i];
+            var rt = ceNameNormalise(String(rows[i].fields.thing || ''));   // [PLAN-LINK]
+            if (rt && !byName[rt]) byName[rt] = rows[i];
         }
         var depth = function(d0: any): number {
             var n = 0, cur: any = d0, seen: any = {};
@@ -77282,6 +77355,9 @@ async function _cePlanMakeOne(row: any, madeBy: any): Promise<string> {
     }
     if (!newId) return 'It was saved, but its record could not be found to link.';
     madeBy[ceNameNormalise(name)] = { id: newId, kind: kd, name: name };
+    // [PLAN-LINK] And by its THING words, which is how a row that was unnamed is pointed at.
+    var tk = ceNameNormalise(String(f.thing || ''));
+    if (tk && !madeBy[tk]) madeBy[tk] = { id: newId, kind: kd, name: name };
     // Links that only exist once the record does.
     if (target && link === 'holder') {
         try { await ceEntityWrite(newId, 'parentId', String(target.id)); } catch (eLh) {}
@@ -77318,8 +77394,12 @@ async function cePlanPublishRows(): Promise<any> {
     var kk: string;
     for (kk in rec.byNorm) known[kk] = true;
     for (var ai = 0; ai < all.length; ai++) {
+        if (!_cePlanIsRow(all[ai]) || String(all[ai].kind) === 'planleft') continue;
         var an = ceNameNormalise(String((all[ai].fields && all[ai].fields.name) || ''));
-        if (an && _cePlanIsRow(all[ai]) && String(all[ai].kind) !== 'planleft') known[an] = true;
+        if (an) known[an] = true;
+        // [PLAN-LINK] An unnamed row is pointed at by its THING words until Make names it.
+        var at = ceNameNormalise(String((all[ai].fields && all[ai].fields.thing) || ''));
+        if (at) known[at] = true;
     }
     for (var i = 0; i < all.length; i++) {
         var d: any = all[i];
@@ -77645,13 +77725,20 @@ var CE_BENCH_PLAN_TONE: any[] = [
 ];
 
 // [BENCH-SHARE] ONE REPLY, READ BY EVERY TEST OF THE FIXTURE. Run n of each test reads run n
-// of the pass, so a suite costs one pass per run rather than one per test, and the six counts
-// describe the same twenty replies. Cleared when a test or suite is started.
+// of the pass, so a suite costs one pass per run rather than one per test. KEPT ACROSS STARTS:
+// a suite stopped by a wall and resumed test by test reads the replies already paid for. A
+// test that has already read a reply gets a fresh one, so running one test again is a new
+// sample and never the old count repeated.
 var _ceBenchShare: any = {};
 
-function _ceBenchPlanRun(turns: any[], tag: string, n: number): Promise<any> {
+function _ceBenchPlanRun(turns: any[], tag: string, n: number, tid?: string): Promise<any> {
     var key = String(tag) + ':' + String(n);
-    if (_ceBenchShare[key]) return Promise.resolve(_ceBenchShare[key]);
+    var who = String(tid || '');
+    var hit: any = _ceBenchShare[key];
+    if (hit && !(who && hit.readBy[who])) {
+        if (who) hit.readBy[who] = true;
+        return Promise.resolve(hit.got);
+    }
     var head = ceBuildHead({ family: 'chat', world: ceWorldSpanFrom('', []) });
     var base = ceBuildChatMessagesFrom(head, ceWorldChatBlockFrom([], _ceBuildKindLabels(null)), turns);
     return cePlanRunFrom(base, _cePlanKindsOn(null), []).then(function(out: any) {
@@ -77659,43 +77746,53 @@ function _ceBenchPlanRun(turns: any[], tag: string, n: number): Promise<any> {
         var i = 0;
         for (i = 0; i < out.kept.length; i++) {
             var r: any = out.kept[i];
-            lines.push(String(r.word) + ' | ' + (r.name || '(unnamed)') + ' | x' + String(r.count)
+            lines.push(String(r.word) + ' | ' + (r.name || '(unnamed) ' + String(r.thing || '')) + ' | x' + String(r.count)
                        + (r.inside ? (' | in ' + r.inside) : '') + (r.scale ? (' | ' + r.scale) : ''));
         }
         for (i = 0; i < out.left.length; i++) lines.push('left out | ' + String(out.left[i].thing));
         for (i = 0; i < out.errors.length; i++) lines.push('unread | ' + String(out.errors[i]));
         var got: any = { kept: out.kept, left: out.left, errors: out.errors,
-                         text: 'Read as:\n' + (lines.length ? lines.join('\n') : '(nothing)')
-                             + '\n\n' + out.raw.join('\n\n--- repair ---\n\n') };
-        _ceBenchShare[key] = got;
+                         text: 'Read as (' + String(out.parts) + ' repl' + (out.parts === 1 ? 'y' : 'ies')
+                             + ' before any repair):\n' + (lines.length ? lines.join('\n') : '(nothing)')
+                             + '\n\n' + out.raw.join('\n\n--- next reply ---\n\n') };
+        var rb: any = {};
+        if (who) rb[who] = true;
+        _ceBenchShare[key] = { got: got, readBy: rb };
         return got;
     });
 }
 
-// The kept rows whose name or words contain `bit` and none of `not`.
-function _ceBenchPlanFind(r: any, bit: string, not?: string[]): any[] {
-    var out: any[] = [];
-    var no: string[] = not || [];
+// [BENCH-FIXTURE] A ROW IS FOUND BY WHAT IT IS, NOT BY A WORD IN IT. The 3.14.14 check matched
+// "ilse" anywhere in a row and so counted "Ilse's smuggling" and "Ilse's uncle" as two more
+// Ilses. A named thing is the row whose NAME is that name; an unnamed one is found by its words.
+function _ceBenchPlanNamed(r: any, name: string, word: string): any {
+    var want = ceNameNormalise(name);
+    var f: any[] = [];
     for (var i = 0; i < r.kept.length; i++) {
+        var n = ceNameNormalise(String(r.kept[i].name || ''));
+        if (!n) n = ceNameNormalise(String(r.kept[i].thing || ''));
+        if (n === want) f.push(r.kept[i]);
+    }
+    if (!f.length) return { row: null, why: 'no row for ' + name };
+    if (f.length > 1) return { row: null, why: String(f.length) + ' rows for ' + name };
+    if (String(f[0].word) !== word) return { row: null, why: name + ' is ' + String(f[0].word) };
+    return { row: f[0], why: '' };
+}
+// Kept rows whose THING or NAME contains `bit`, other than `except`.
+function _ceBenchPlanWords(r: any, bit: string, except: any): any[] {
+    var out: any[] = [];
+    for (var i = 0; i < r.kept.length; i++) {
+        if (except && r.kept[i] === except) continue;
         var hay = (String(r.kept[i].name || '') + ' ' + String(r.kept[i].thing || '')).toLowerCase();
-        if (hay.indexOf(bit) < 0) continue;
-        var skip = false;
-        for (var j = 0; j < no.length; j++) { if (hay.indexOf(no[j]) >= 0) { skip = true; break; } }
-        if (!skip) out.push(r.kept[i]);
+        if (hay.indexOf(bit) >= 0) out.push(r.kept[i]);
     }
     return out;
 }
-function _ceBenchPlanOne(r: any, bit: string, what: string, not?: string[]): any {
-    var f = _ceBenchPlanFind(r, bit, not);
+function _ceBenchPlanOneOf(r: any, bit: string, what: string): any {
+    var f = _ceBenchPlanWords(r, bit, null);
     if (!f.length) return { row: null, why: 'no row for ' + what };
     if (f.length > 1) return { row: null, why: String(f.length) + ' rows for ' + what };
     return { row: f[0], why: '' };
-}
-function _ceBenchPlanIs(r: any, bit: string, what: string, word: string, not?: string[]): any {
-    var o = _ceBenchPlanOne(r, bit, what, not);
-    if (!o.row) return o;
-    if (String(o.row.word) !== word) return { row: null, why: what + ' is ' + String(o.row.word) };
-    return o;
 }
 
 function _ceBenchVerdict(ok: boolean, why: string): any { return { ok: !!ok, why: String(why || '') }; }
@@ -77751,72 +77848,90 @@ var CE_BENCH_SUITES: any[] = [
           } }
       ] },
     { id: 'plan', label: 'Plan',
-      note: 'Listing the things a conversation settled. The six tests read the same twenty '
-          + 'replies; Nothing reads its own. Run this suite in an empty story: '
-          + 'the live pass carries the open story\u2019s context, and so does this.',
+      // [BENCH-RUNS] Ten runs, not twenty: one Plan reply is the longest call the engine
+      // makes, and twenty of them is more than a script allowance holds between refills.
+      runs: 10,
+      note: 'Listing the things a conversation settled. The salt tests read the same replies, so '
+          + 'the suite costs one pass per run; Nothing reads its own. Run this suite in an empty '
+          + 'story: the live pass carries the open story\u2019s context, and so does this.',
       tests: [
         { id: 'twonames', label: 'One thing, two names',
           contract: 'Hobb\u2019s Barn, which everyone calls the granary, is one Place row, and the '
                   + 'granary is not listed again on its own.',
-          run: function(n: number) { return _ceBenchPlanRun(CE_BENCH_PLAN_TURNS, 'salt', n); },
+          run: function(n: number, tid: string) { return _ceBenchPlanRun(CE_BENCH_PLAN_TURNS, 'salt', n, tid); },
           check: function(r: any) {
-              var o = _ceBenchPlanIs(r, 'hobb', 'the barn', 'Place');
+              var o = _ceBenchPlanNamed(r, 'Hobb\u2019s Barn', 'Place');
               if (!o.row) return _ceBenchVerdict(false, o.why);
-              var g = _ceBenchPlanFind(r, 'granary', ['hobb']);
+              var g = _ceBenchPlanWords(r, 'granary', o.row);
               return _ceBenchVerdict(!g.length, g.length ? 'the granary listed apart' : 'one row');
           } },
         { id: 'rejected', label: 'Raised and dropped',
           contract: 'The toll bridge the author dropped is not on the list of things to make.',
-          run: function(n: number) { return _ceBenchPlanRun(CE_BENCH_PLAN_TURNS, 'salt', n); },
+          run: function(n: number, tid: string) { return _ceBenchPlanRun(CE_BENCH_PLAN_TURNS, 'salt', n, tid); },
           check: function(r: any) {
-              var b = _ceBenchPlanFind(r, 'bridge');
+              var b = _ceBenchPlanWords(r, 'bridge', null);
               return _ceBenchVerdict(!b.length, b.length ? 'the bridge is kept' : 'left out');
           } },
         { id: 'group', label: 'A group and one of its members',
           contract: 'The Reed Wardens are a Group and Ilse is a Character.',
-          run: function(n: number) { return _ceBenchPlanRun(CE_BENCH_PLAN_TURNS, 'salt', n); },
+          run: function(n: number, tid: string) { return _ceBenchPlanRun(CE_BENCH_PLAN_TURNS, 'salt', n, tid); },
           check: function(r: any) {
-              var g = _ceBenchPlanIs(r, 'warden', 'the Reed Wardens', 'Group', ['ilse']);
+              var g = _ceBenchPlanNamed(r, 'Reed Wardens', 'Group');
               if (!g.row) return _ceBenchVerdict(false, g.why);
-              var c = _ceBenchPlanIs(r, 'ilse', 'Ilse', 'Character', ['whistle']);
+              var c = _ceBenchPlanNamed(r, 'Ilse', 'Character');
               return _ceBenchVerdict(!!c.row, c.row ? 'Group and Character' : c.why);
           } },
         { id: 'vessel', label: 'Lived in, or carried',
           contract: 'The Brine Wagon, which families live aboard, is a Place; the bone whistle Ilse '
                   + 'carries is an Object.',
-          run: function(n: number) { return _ceBenchPlanRun(CE_BENCH_PLAN_TURNS, 'salt', n); },
+          run: function(n: number, tid: string) { return _ceBenchPlanRun(CE_BENCH_PLAN_TURNS, 'salt', n, tid); },
           check: function(r: any) {
-              var w = _ceBenchPlanIs(r, 'wagon', 'the Brine Wagon', 'Place');
+              var w = _ceBenchPlanNamed(r, 'Brine Wagon', 'Place');
               if (!w.row) return _ceBenchVerdict(false, w.why);
-              var o = _ceBenchPlanIs(r, 'whistle', 'the whistle', 'Object');
-              return _ceBenchVerdict(!!o.row, o.row ? 'Place and Object' : o.why);
+              var o = _ceBenchPlanOneOf(r, 'whistle', 'the whistle');
+              if (!o.row) return _ceBenchVerdict(false, o.why);
+              return _ceBenchVerdict(String(o.row.word) === 'Object',
+                                     String(o.row.word) === 'Object' ? 'Place and Object' : ('the whistle is ' + String(o.row.word)));
           } },
         { id: 'count', label: 'Four, unnamed',
           contract: 'The four salt farms are one Place row with COUNT 4 and no name.',
-          run: function(n: number) { return _ceBenchPlanRun(CE_BENCH_PLAN_TURNS, 'salt', n); },
+          run: function(n: number, tid: string) { return _ceBenchPlanRun(CE_BENCH_PLAN_TURNS, 'salt', n, tid); },
           check: function(r: any) {
-              var f = _ceBenchPlanIs(r, 'farm', 'the farms', 'Place');
+              var f = _ceBenchPlanOneOf(r, 'farm', 'the farms');
               if (!f.row) return _ceBenchVerdict(false, f.why);
+              if (String(f.row.word) !== 'Place') return _ceBenchVerdict(false, 'the farms are ' + String(f.row.word));
               if (Number(f.row.count) !== 4) return _ceBenchVerdict(false, 'count ' + String(f.row.count));
               return _ceBenchVerdict(!String(f.row.name || ''), f.row.name ? ('named ' + f.row.name) : 'four, unnamed');
           } },
         { id: 'belongs', label: 'Whose it is',
           contract: 'The whistle is inside Ilse, and Ilse is inside the Reed Wardens.',
-          run: function(n: number) { return _ceBenchPlanRun(CE_BENCH_PLAN_TURNS, 'salt', n); },
+          run: function(n: number, tid: string) { return _ceBenchPlanRun(CE_BENCH_PLAN_TURNS, 'salt', n, tid); },
           check: function(r: any) {
-              var o = _ceBenchPlanOne(r, 'whistle', 'the whistle');
+              var o = _ceBenchPlanOneOf(r, 'whistle', 'the whistle');
               if (!o.row) return _ceBenchVerdict(false, o.why);
-              if (String(o.row.inside || '').toLowerCase().indexOf('ilse') < 0) {
+              if (ceNameNormalise(String(o.row.inside || '')) !== 'ilse') {
                   return _ceBenchVerdict(false, 'whistle inside ' + (o.row.inside || '(top)'));
               }
-              var c = _ceBenchPlanOne(r, 'ilse', 'Ilse', ['whistle']);
+              var c = _ceBenchPlanNamed(r, 'Ilse', 'Character');
               if (!c.row) return _ceBenchVerdict(false, c.why);
-              var ok = String(c.row.inside || '').toLowerCase().indexOf('warden') >= 0;
+              var ok = ceNameNormalise(String(c.row.inside || '')) === 'reedwardens';
               return _ceBenchVerdict(ok, ok ? 'both placed' : ('Ilse inside ' + (c.row.inside || '(top)')));
+          } },
+        { id: 'background', label: 'Background, not things',
+          contract: 'The families who rake the salt and the tidal pans they rake it from are '
+                  + 'background: neither is on the list.',
+          run: function(n: number, tid: string) { return _ceBenchPlanRun(CE_BENCH_PLAN_TURNS, 'salt', n, tid); },
+          check: function(r: any) {
+              var fam = _ceBenchPlanWords(r, 'famil', null);
+              var pan = _ceBenchPlanWords(r, 'tidal', null);
+              if (fam.length && pan.length) return _ceBenchVerdict(false, 'families and pans listed');
+              if (fam.length) return _ceBenchVerdict(false, 'families listed as ' + String(fam[0].word));
+              if (pan.length) return _ceBenchVerdict(false, 'pans listed');
+              return _ceBenchVerdict(true, 'neither');
           } },
         { id: 'nothing', label: 'Nothing to make',
           contract: 'A conversation only about tone lists nothing to make.',
-          run: function(n: number) { return _ceBenchPlanRun(CE_BENCH_PLAN_TONE, 'tone', n); },
+          run: function(n: number, tid: string) { return _ceBenchPlanRun(CE_BENCH_PLAN_TONE, 'tone', n, tid); },
           check: function(r: any) {
               return _ceBenchVerdict(!r.kept.length, r.kept.length ? (String(r.kept.length) + ' kept') : 'none');
           } }
@@ -77918,13 +78033,16 @@ async function _ceBenchRunOne(sid: string, tid: string): Promise<string> {
                      contract: String(f.test.contract), runs: [], failed: 0, total: 0,
                      infra: '', walls: 0, at: Date.now() };
     _ceBench.results[key] = res;
-    for (var n = 0; n < CE_BENCH_RUNS; n++) {
+    var runs = Number(f.suite.runs) || CE_BENCH_RUNS;          // [BENCH-RUNS]
+    res.runsWanted = runs;
+    var blips = 0;
+    for (var n = 0; n < runs; n++) {
         if (_ceBench.stop) { res.infra = 'Stopped after ' + String(res.runs.length) + ' runs.'; break; }
         _ceBench.running = key;
-        _ceBench.note = String(f.test.label) + ': run ' + String(n + 1) + ' of ' + String(CE_BENCH_RUNS);
+        _ceBench.note = String(f.test.label) + ': run ' + String(n + 1) + ' of ' + String(runs);
         _ceBenchPublish();
         try {
-            var out: any = await f.test.run(n);   // [BENCH-SHARE] run n reads shared reply n
+            var out: any = await f.test.run(n, String(tid));   // [BENCH-SHARE] run n reads shared reply n
             var v: any = f.test.check(out) || _ceBenchVerdict(false, 'no verdict');
             res.runs.push({ ok: !!v.ok, why: String(v.why || ''), text: String((out && out.text) || '') });
             if (!v.ok) res.failed++;
@@ -77933,6 +78051,18 @@ async function _ceBenchRunOne(sid: string, tid: string): Promise<string> {
             if (_ceBenchIsBudget(msg) && res.walls < 5) {          // [BENCH-PACE]
                 res.walls++;
                 if (await _ceBenchWaitAllowance(msg, String(f.test.label))) { n--; continue; }
+            }
+            // [BENCH-INFRA] A broken stream or a timeout is tried again, twice in a test, after a
+            // pause. Two of the 3.14.14 Plan tests stopped on their first run this way.
+            if (_ceGenFailKind(eBr) === 'transport' && !_ceBenchIsBudget(msg) && blips < 2
+                && /stream|timed out|timeout|abort/i.test(msg)) {
+                blips++;
+                _ceBench.note = String(f.test.label) + ': the call broke off (' + msg + '); trying run '
+                              + String(n + 1) + ' again.';
+                _ceBenchPublish();
+                try { await api.v1.timers.sleep(5000); } catch (eBz) {}
+                n--;
+                continue;
             }
             if (_ceGenFailKind(eBr) === 'transport') {          // [BENCH-INFRA]
                 res.infra = 'The call did not reach the model after ' + String(res.runs.length)
@@ -77954,7 +78084,6 @@ async function ceBenchRunTest(sid: string, tid: string): Promise<void> {
     if (_ceBench.busy) { _ceBench.note = 'One test at a time.'; _ceBenchPublish(); return; }
     _ceBench.busy = true;
     _ceBench.stop = false;
-    _ceBenchShare = {};                                     // [BENCH-SHARE]
     try {
         await ceBenchLoad();
         var f: any = _ceBenchFind(sid, tid);
@@ -77978,7 +78107,6 @@ async function ceBenchRunSuite(sid: string): Promise<void> {
     if (!su) return;
     _ceBench.busy = true;
     _ceBench.stop = false;
-    _ceBenchShare = {};                                     // [BENCH-SHARE]
     try {
         await ceBenchLoad();
         var lines: string[] = [];

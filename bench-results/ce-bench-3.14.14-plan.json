@@ -1,0 +1,90 @@
+{
+  "ce": "bench",
+  "version": 1,
+  "exportedAt": 1793563714937,
+  "runsPerTest": 20,
+  "results": {
+    "plan:twonames": {
+      "suite": "plan",
+      "test": "twonames",
+      "label": "One thing, two names",
+      "contract": "Hobb’s Barn, which everyone calls the granary, is one Place row, and the granary is not listed again on its own.",
+      "runs": [
+        {
+          "ok": false,
+          "why": "threw: [MoXG3d] Error in input stream",
+          "text": ""
+        }
+      ],
+      "failed": 1,
+      "total": 1,
+      "infra": "The call did not reach the model after 1 runs: [iyKEr1] The operation was aborted. ",
+      "walls": 0,
+      "at": 1793563010615
+    },
+    "plan:rejected": {
+      "suite": "plan",
+      "test": "rejected",
+      "label": "Raised and dropped",
+      "contract": "The toll bridge the author dropped is not on the list of things to make.",
+      "runs": [
+        {
+          "ok": false,
+          "why": "threw: [Q9vSkF] Error in input stream",
+          "text": ""
+        },
+        {
+          "ok": false,
+          "why": "threw: [onMev6] Error in input stream",
+          "text": ""
+        },
+        {
+          "ok": true,
+          "why": "left out",
+          "text": "Read as:\nPlace | (unnamed) | x1 | region\nGroup | Reed Wardens | x1\nCharacter | Ilse | x1 | in Reed Wardens\nCharacter | (unnamed) | x1\nPlace | Brine Wagon | x1 | structure\nPlace | Hobb's Barn | x1 | in salt-marsh coast | structure\nPlace | (unnamed) | x4 | in salt-marsh coast | structure\nObject | (unnamed) | x1 | in Ilse\nThread | (unnamed) | x1\nPeople | (unnamed) | x24\nPlace | (unnamed) | x24 | in salt-marsh coast | structure\nPlace | (unnamed) | x1 | in salt-marsh coast | structure\n\nTHING: salt-marsh coast\nSAID: \"A story on a salt-marsh coast\"\nSETTLED: the author stated it as the setting: YES\nKIND: a coastal region: Place\nNAME: (unnamed)\nCOUNT: 1\nINSIDE: (top)\nSCALE: a stretch of coast: region\nLINE: A salt-marsh coast where families rake salt from the tidal pans.\n\nTHING: families\nSAID: \"where families rake salt from the tidal pans and send it inland\" / \"whole families live aboard it as it crawls along the causeway\"\nSETTLED: the author stated they work the pans and live on the wagon: YES\nKIND: people who work the pans: People\nNAME: (unnamed)\nCOUNT: (unspecified)\nINSIDE: (top)\nLINE: Families who rake salt from the tidal pans and live aboard the Brine Wagon.\n\nTHING: tidal pans\nSAID: \"where families rake salt from the tidal pans\"\nSETTLED: the author stated they exist: YES\nKIND: a place where salt is raked: Place\nNAME: (unnamed)\nCOUNT: (unspecified)\nINSIDE: salt-marsh coast\nSCALE: a feature of the coast: structure\nLINE: Tidal pans on the salt-marsh coast where salt is raked.\n\nTHING: Reed Wardens\nSAID: \"The Reed Wardens, a guild that patrols the causeways and takes a tithe from every cart.\"\nSETTLED: the author stated it as fact: YES\nKIND: a guild that patrols and takes a tithe: Group\nNAME: Reed Wardens\nCOUNT: 1\nINSIDE: (top)\nLINE: The Reed Wardens are a guild that patrols the causeways, taking a tithe from every cart.\n\nTHING: causeways\nSAID: \"a guild that patrols the causeways\" / \"it crawls along the causeway\"\nSETTLED: the author stated they exist and are patrolled: YES\nKIND: a path for carts: Place\nNAME: (unnamed)\nCOUNT: (unspecified)\nINSIDE: salt-marsh coast\nSCALE: a path through the marsh: structure\nLINE: The causeways are paths through the salt-marsh that are patrolled by the Reed Wardens.\n\nTHING: Ilse\nSAID: \"Ilse is their youngest warden, and she is quietly smuggling salt for her uncle.\"\nSETTLED: the author introduced her and her role: YES\nKIND: one particular person: Character\nNAME: Ilse\nCOUNT: 1\nINSIDE: Reed Wardens\nLINE: Ilse is the youngest Reed Warden and is smuggling salt for her uncle.\n\nTHING: Ilse's uncle\nSAID: \"she is quietly smuggling salt for her uncle.\"\nSETTLED: the author stated he exists: YES\nKIND: one particular person: Character\nNAME: (unnamed)\nCOUNT: 1\nINSIDE: (top)\nLINE: Ilse's uncle, for whom she is smuggling salt.\n\nTHING: Brine Wagon\nSAID: \"the salt goes out on the Brine Wagon, a huge wheeled house drawn by oxen\"\nSETTLED: the author stated it as fact: YES\nKIND: a vehicle people live in: Place\nNAME: Brine Wagon\nCOUNT: 1\nINSIDE: (top)\nSCALE: one vehicle that is a house: structure\nLINE: The Brine Wagon is a huge wheeled house drawn by oxen that carries salt inland.\n\nTHING: Hobb's Barn\nSAID: \"Hobb’s Barn. Everyone calls it the granary, though it has never held grain.\"\nSETTLED: the author stated it as fact: YES\nKIND: a building that stores salt: Place\nNAME: Hobb's Barn\nCOUNT: 1\nINSIDE: salt-marsh coast\nSCALE: one building: structure\nLINE: Hobb's Barn is a granary that has never held grain, used instead to store salt.\n\nTHING: four salt farms\nSAID: \"It stands among four salt farms I have not named yet.\"\nSETTLED: the author stated they exist: YES\nKIND: a place where salt is farmed: Place\nNAME: (unnamed)\nCOUNT: 4\nINSIDE: salt-marsh coast\nSCALE: a farm: structure\nLINE: A salt farm on the salt-marsh coast.\n\nTHING: Ilse's bone whistle\nSAID: \"Ilse carries a bone whistle her mother left her, for calling the other wardens.\"\nSETTLED: the author stated it as fact: YES\nKIND: a thing she carries: Object\nNAME: (unnamed)\nCOUNT: 1\nINSIDE: Ilse\nLINE: A bone whistle left to Ilse by her mother, used for calling other wardens.\n\nTHING: Ilse's smuggling\nSAID: \"she is quietly smuggling salt for her uncle.\"\nSETTLED: the author stated it as a situation: YES\nKIND: a situation: Thread\nNAME: (unnamed)\nCOUNT: 1\nINSIDE: (top)\nLINE: Ilse is smuggling salt for her uncle.\n\n--- repair ---\n\nTHING: families\nSAID: \"where families rake salt from the tidal pans and send it inland\" / \"whole families live aboard it as it crawls along the causeway\"\nSETTLED: the author stated they work the pans and live on the wagon: YES\nKIND: people who work the pans: People\nNAME: (unnamed)\nCOUNT: 24\nINSIDE: (top)\nLINE: Families who rake salt from the tidal pans and live aboard the Brine Wagon.\n\nTHING: tidal pans\nSAID: \"where families rake salt from the tidal pans\"\nSETTLED: the author stated they exist: YES\nKIND: a place where salt is raked: Place\nNAME: (unnamed)\nCOUNT: 24\nINSIDE: salt-marsh coast\nSCALE: a feature of the coast: structure\nLINE: Tidal pans on the salt-marsh coast where salt is raked.\n\nTHING: causeways\nSAID: \"a guild that patrols the causeways\" / \"it crawls along the causeway\"\nSETTLED: the author stated they exist and are patrolled: YES\nKIND: a path for carts: Place\nNAME: (unnamed)\nCOUNT: 1\nINSIDE: salt-marsh coast\nSCALE: a path through the marsh: structure\nLINE: The causeways are paths through the salt-marsh that are patrolled by the Reed Wardens."
+        }
+      ],
+      "failed": 2,
+      "total": 3,
+      "infra": "The call did not reach the model after 3 runs: Helper 1: helper timed out after 120s",
+      "walls": 0,
+      "at": 1793563361270
+    },
+    "plan:group": {
+      "suite": "plan",
+      "test": "group",
+      "label": "A group and one of its members",
+      "contract": "The Reed Wardens are a Group and Ilse is a Character.",
+      "runs": [
+        {
+          "ok": false,
+          "why": "2 rows for Ilse",
+          "text": "Read as:\nPlace | (unnamed) | x1 | region\nPeople | (unnamed) | x1 | in the salt-marsh coast\nPlace | (unnamed) | x1 | in the salt-marsh coast | structure\nGroup | the Reed Wardens | x1\nCharacter | Ilse | x1 | in the Reed Wardens\nPlace | (unnamed) | x1 | in the salt-marsh coast | structure\nPlace | the Brine Wagon | x1 | in the causeways | structure\nPlace | Hobb's Barn | x1 | in the salt-marsh coast | structure\nObject | (unnamed) | x1 | in Ilse\nPlace | (unnamed) | x4 | in the salt-marsh coast | structure\nThread | (unnamed) | x1\n\nTHING: salt-marsh coast\nSAID: \"A story on a salt-marsh coast\"\nSETTLED: the author set the story here: YES\nKIND: a coastal region: Place\nNAME: (unnamed)\nCOUNT: 1\nINSIDE: (top)\nSCALE: a coast: region\nLINE: The salt-marsh coast where families rake salt from the tidal pans.\n\nTHING: families\nSAID: \"where families rake salt from the tidal pans\"\nSETTLED: the author stated they exist: YES\nKIND: people who rake salt: People\nNAME: (unnamed)\nCOUNT: 1\nINSIDE: the salt-marsh coast\nLINE: The families who rake salt from the tidal pans on the coast.\n\nTHING: tidal pans\nSAID: \"where families rake salt from the tidal pans\"\nSETTLED: the author stated they exist: YES\nKIND: places where salt is raked: Place\nNAME: (unnamed)\nCOUNT: 1\nINSIDE: the salt-marsh coast\nSCALE: a set of pans: structure\nLINE: The tidal pans where families on the coast rake salt.\n\nTHING: Reed Wardens\nSAID: \"The Reed Wardens, a guild that patrols the causeways and takes a tithe from every cart.\"\nSETTLED: the author stated it as fact: YES\nKIND: a guild that patrols and takes a tithe: Group\nNAME: the Reed Wardens\nCOUNT: 1\nINSIDE: (top)\nLINE: The Reed Wardens are a guild that patrols the causeways and takes a tithe from every cart.\n\nTHING: Ilse\nSAID: \"Ilse is their youngest warden, and she is quietly smuggling salt for her uncle.\"\nSETTLED: the author introduced her and her actions: YES\nKIND: one person with a name and a role: Character\nNAME: Ilse\nCOUNT: 1\nINSIDE: the Reed Wardens\nLINE: Ilse is the youngest Reed Warden and smuggles salt for her uncle.\n\nTHING: causeways\nSAID: \"a guild that patrols the causeways\"\nSETTLED: the author stated they exist: YES\nKIND: paths that are patrolled: Place\nNAME: (unnamed)\nCOUNT: 1\nINSIDE: the salt-marsh coast\nSCALE: a network of paths: structure\nLINE: The causeways across the salt-marsh coast, which the Reed Wardens patrol.\n\nTHING: Brine Wagon\nSAID: \"the Brine Wagon, a huge wheeled house drawn by oxen, and whole families live aboard it as it crawls along the causeway.\"\nSETTLED: the author stated it as fact: YES\nKIND: a vehicle people live in: Place\nNAME: the Brine Wagon\nCOUNT: 1\nINSIDE: the causeways\nSCALE: one vehicle: structure\nLINE: The Brine Wagon is a huge wheeled house where families live as it moves along the causeway.\n\nTHING: Hobb's Barn\nSAID: \"Hobb’s Barn. Everyone calls it the granary, though it has never held grain.\"\nSETTLED: the author stated it as fact: YES\nKIND: a building used for salt: Place\nNAME: Hobb's Barn\nCOUNT: 1\nINSIDE: the salt-marsh coast\nSCALE: one building: structure\nLINE: Hobb's Barn is a granary that has never held grain.\n\nTHING: bone whistle\nSAID: \"Ilse carries a bone whistle her mother left her, for calling the other wardens.\"\nSETTLED: the author stated it as fact: YES\nKIND: a thing she carries and uses: Object\nNAME: (unnamed)\nCOUNT: 1\nINSIDE: Ilse\nLINE: A bone whistle left to Ilse by her mother, used for calling other wardens.\n\nTHING: salt farms\nSAID: \"It stands among four salt farms I have not named yet.\"\nSETTLED: the author stated they exist: YES\nKIND: places where salt is farmed: Place\nNAME: (unnamed)\nCOUNT: 4\nINSIDE: the salt-marsh coast\nSCALE: a farm: structure\nLINE: A salt farm on the coast.\n\nTHING: Ilse's smuggling\nSAID: \"she is quietly smuggling salt for her uncle.\"\nSETTLED: the author stated it as an ongoing situation: YES\nKIND: a situation or storyline: Thread\nNAME: (unnamed)\nCOUNT: 1\nINSIDE: (top)\nLINE: Ilse is quietly smuggling salt for her uncle."
+        }
+      ],
+      "failed": 1,
+      "total": 1,
+      "infra": "The call did not reach the model after 1 runs: Helper 2: helper timed out after 120s",
+      "walls": 0,
+      "at": 1793563586507
+    },
+    "plan:vessel": {
+      "suite": "plan",
+      "test": "vessel",
+      "label": "Lived in, or carried",
+      "contract": "The Brine Wagon, which families live aboard, is a Place; the bone whistle Ilse carries is an Object.",
+      "runs": [
+        {
+          "ok": true,
+          "why": "Place and Object",
+          "text": "Read as:\nPlace | (unnamed) | x1 | region\nPeople | (unnamed) | x1\nPlace | (unnamed) | x1 | in the salt-marsh coast | structure\nGroup | the Reed Wardens | x1\nPlace | (unnamed) | x1 | in the salt-marsh coast | structure\nCharacter | Ilse | x1 | in the Reed Wardens\nCharacter | (unnamed) | x1\nPlace | the Brine Wagon | x1 | structure\nPlace | Hobb's Barn | x1 | in the salt-marsh coast | structure\nPlace | (unnamed) | x4 | in the salt-marsh coast | structure\nObject | (unnamed) | x1 | in Ilse\nThread | (unnamed) | x1\n\nTHING: salt-marsh coast\nSAID: \"A story on a salt-marsh coast\"\nSETTLED: the author set the story here: YES\nKIND: a coastal region: Place\nNAME: (unnamed)\nCOUNT: 1\nINSIDE: (top)\nSCALE: region\nLINE: The salt-marsh coast where the story is set.\n\nTHING: families\nSAID: \"where families rake salt from the tidal pans and send it inland\"\nSETTLED: the author stated they exist and perform this work: YES\nKIND: people who work the pans: People\nNAME: (unnamed)\nCOUNT: 1\nINSIDE: (top)\nLINE: The families who rake salt from the tidal pans.\n\nTHING: tidal pans\nSAID: \"where families rake salt from the tidal pans\"\nSETTLED: the author stated they exist: YES\nKIND: a place where salt is harvested: Place\nNAME: (unnamed)\nCOUNT: 1\nINSIDE: the salt-marsh coast\nSCALE: structure\nLINE: The tidal pans where salt is raked.\n\nTHING: Reed Wardens\nSAID: \"The Reed Wardens, a guild that patrols the causeways and takes a tithe from every cart.\"\nSETTLED: the author stated their name and function: YES\nKIND: a guild: Group\nNAME: the Reed Wardens\nCOUNT: 1\nINSIDE: (top)\nLINE: The Reed Wardens, a guild that patrols the causeways and takes a tithe from every cart.\n\nTHING: causeways\nSAID: \"a guild that patrols the causeways\" / \"it crawls along the causeway\"\nSETTLED: the author stated they exist and are patrolled: YES\nKIND: a path for travel: Place\nNAME: (unnamed)\nCOUNT: 1\nINSIDE: the salt-marsh coast\nSCALE: structure\nLINE: The causeways that the Reed Wardens patrol.\n\nTHING: Ilse\nSAID: \"Ilse is their youngest warden, and she is quietly smuggling salt for her uncle.\"\nSETTLED: the author stated her name, role, and a secret: YES\nKIND: one person with a name and a role: Character\nNAME: Ilse\nCOUNT: 1\nINSIDE: the Reed Wardens\nLINE: Ilse, the youngest Reed Warden, who smuggles salt for her uncle.\n\nTHING: Ilse's uncle\nSAID: \"she is quietly smuggling salt for her uncle\"\nSETTLED: the author stated he exists and is the recipient of smuggled salt: YES\nKIND: one particular person: Character\nNAME: (unnamed)\nCOUNT: 1\nINSIDE: (top)\nLINE: Ilse's uncle, for whom she smuggles salt.\n\nTHING: Brine Wagon\nSAID: \"the salt goes out on the Brine Wagon, a huge wheeled house drawn by oxen, and whole families live aboard it as it crawls along the causeway.\"\nSETTLED: the author stated its name, form, and function: YES\nKIND: a vehicle people live in: Place\nNAME: the Brine Wagon\nCOUNT: 1\nINSIDE: (top)\nSCALE: structure\nLINE: The Brine Wagon, a huge wheeled house drawn by oxen, on which families live as it transports salt.\n\nTHING: Hobb's Barn\nSAID: \"Hobb’s Barn. Everyone calls it the granary, though it has never held grain.\"\nSETTLED: the author stated its name and a common misnomer: YES\nKIND: a building used for storage: Place\nNAME: Hobb's Barn\nCOUNT: 1\nINSIDE: the salt-marsh coast\nSCALE: structure\nLINE: Hobb's Barn, also called the granary, which has never held grain.\n\nTHING: four salt farms\nSAID: \"It stands among four salt farms I have not named yet.\"\nSETTLED: the author stated their number and location: YES\nKIND: a place where salt is harvested: Place\nNAME: (unnamed)\nCOUNT: 4\nINSIDE: the salt-marsh coast\nSCALE: structure\nLINE: A salt farm, one of four near Hobb's Barn.\n\nTHING: bone whistle\nSAID: \"Ilse carries a bone whistle her mother left her, for calling the other wardens.\"\nSETTLED: the author stated its form, origin, and purpose: YES\nKIND: an object she carries: Object\nNAME: (unnamed)\nCOUNT: 1\nINSIDE: Ilse\nLINE: A bone whistle left to Ilse by her mother, used for calling other wardens.\n\nTHING: Ilse's smuggling\nSAID: \"she is quietly smuggling salt for her uncle.\"\nSETTLED: the author stated this is happening: YES\nKIND: a situation already under way: Thread\nNAME: (unnamed)\nCOUNT: 1\nINSIDE: (top)\nLINE: Ilse's secret smuggling of salt for her uncle."
+        }
+      ],
+      "failed": 0,
+      "total": 1,
+      "infra": "",
+      "walls": 2,
+      "at": 1793563614049
+    }
+  }
+}
