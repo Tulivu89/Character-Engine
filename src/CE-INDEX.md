@@ -1,6 +1,6 @@
 # CE-INDEX
 
-Engine: 3.14.14
+Engine: 3.14.15
 
 The grep directory for `character-engine.naiscript`: subject, token, the rule in one line. The reasoning lives at the code under each token -- `grep '\[TOKEN\]'` finds it. This file is a locator, not a second copy of the comments; a line that grows into an explanation should move to its site.
 
@@ -88,7 +88,7 @@ Update this file in the same patch as any change it describes.
 - `HELP-CAPS` -- a helper DECLARES story support and absent means no. A helper that ignored the method would answer a story call with no story in it, which reads as working
 - `HELP-LOCAL-FIRST` -- the local allowance is spent first; a mesh that round-robins keeps every allowance half full and empties them together
 - `HELP-NO-FALLBACK` -- a failed delegation THROWS and is never re-run locally: the helper may still be generating, and the local allowance was already too small
-- `HELP-DEAD-ONCE` -- one timeout marks a helper dead for the session, so a deleted helper costs one timeout and not one per call. Refresh clears the mark
+- `HELP-DEAD-ONCE` -- one timeout marks a helper dead for the session, so a deleted helper costs one timeout and not one per call. Refresh clears the mark. The ceiling grows with max_tokens (CE_HELP_RUN_PER_TOK_MS past CE_HELP_NEED_DEF), so a long reply is not a dead helper
 - `HELP-NO-SIGNAL` -- a call carrying a CancellationSignal stays local -- the signal is an object in this worker and there is no verb to relay an abort
 - `HELP-REGISTRY-EPHEMERAL` -- module state, NO storage key. Helpers announce on their load and this engine pings on its own, so it rebuilds from either end
 - `HELP-HOOKS` -- A HELPER'S GENERATION FIRES THIS SCRIPT'S HOOKS. api.v1.generate builds story context and NAI runs every installed script's hooks for it
@@ -243,8 +243,9 @@ Update this file in the same patch as any change it describes.
 - `RULES-RETIRED` -- the Rules and Voice tiers are no longer written from a conversation; a story that has them keeps reading them and edits them in the "Earlier" fold. Premise and Hard rules were already questions; Names and Off limits are new ones
 - `PLAN` -- the Plan stage (CE-BUILD2 3.3-3.4): one press reads the World conversation into rows, one press makes every ticked row. Rows are WizardDrafts with fields.plan = '1'; loadWizardDraftsOfKind hides them from the kind stages until they are records. Left-out things are kind 'planleft'
 - `PLAN-CHAIN` -- the ask is a decision chain per thing (SAID, then SETTLED, then KIND, then NAME, COUNT, INSIDE, SCALE, LINE), every arm written, examples in pairs that look alike and differ
-- `PLAN-CODE` -- code checks every value against the closed lists, matches names to records (shown unticked), expands COUNT into rows and applies the SCALE default; all rejections go back in ONE retry with the reply as an assistant turn
-- `PLAN-LINK` -- what INSIDE becomes is a lookup on the pair of kinds: place/place and group/group parentId, character/group factionId, character/place homeLocationId, object/character-or-place parentId; anything else links nothing
+- `PLAN-CODE` -- code checks every value against the closed lists, matches names to records (shown unticked), expands COUNT into rows (read, never rejected: no number is 1, past 24 is 24) and applies the SCALE default; all rejections go back in ONE retry with the reply as an assistant turn
+- `PLAN-MORE` -- a reply cut at max_tokens (finish_reason 'length', or no finish_reason and a kept block with no LINE) is continued, up to four replies; the half block is dropped and written again, a repeated THING is read once
+- `PLAN-LINK` -- what INSIDE becomes is a lookup on the pair of kinds: place/place and group/group parentId, character/group factionId, character/place homeLocationId, object/character-or-place parentId; anything else links nothing. An unnamed row is pointed at by its THING words until Make names it
 - `WORLD-NONE-AT` -- a question that came back blank is not asked again until the transcript grows; re-roll still asks one on demand
 - `WORLD-PICK` -- WHICH QUESTIONS A STORY ANSWERS IS `enabled`, a field that has gated assembleWizardMemory since WIZARD-2
 - `WORLD-EXTRACT` -- the answers, from the WORLD chat: blanks only, switched-on only, one call per question; "Write the blanks" sits BELOW band 2 rather than inside it: band 2 collapses once any question is asked, which is when this button starts mattering
@@ -584,9 +585,10 @@ Update this file in the same patch as any change it describes.
 - `BENCH-INPUTS` -- a test calls the LIVE builders fed its fixture. The `...From` twins (ceEvalMessages, ceWorldSpanFrom, ceBuildChatMessagesFrom, ceWorldExtractParams) exist so no bench restates a prompt
 - `BENCH-FIXTURE` -- fixtures use nouns no story uses and are never lifted from a failing input; each pair differs by ONE fact
 - `BENCH-TRANSPORT` -- each test uses its prompt's own transport. The world suite goes through generateWithStory and is run in an empty story
-- `BENCH-INFRA` -- a transport failure stops the test and is reported apart from the count; it is not a failing run
-- `BENCH-PACE` -- a budget wall is waited out (polled, capped, Stop honoured) and the same run tried again, so every count is out of 20
-- `BENCH-SHARE` -- tests on one fixture read the same reply: run n of each test is run n of the pass, so the Plan suite costs one pass per run, cleared when a test or suite starts
+- `BENCH-INFRA` -- a transport failure stops the test and is reported apart from the count; it is not a failing run. A broken stream or timeout is tried again, twice a test, first
+- `BENCH-PACE` -- a budget wall is waited out (polled, capped, Stop honoured) and the same run tried again, so every count is out of its suite's runs
+- `BENCH-SHARE` -- tests on one fixture read the same reply: run n of each test is run n of the pass, so the Plan suite costs one pass per run. Kept across starts, so a resumed suite reuses replies already paid for; a test that already read a reply gets a fresh one
+- `BENCH-RUNS` -- a suite may set its own run count (Plan: 10), because its one reply is the longest call the engine makes
 - `STORAGE_BENCH` -- tempStorage `ce_bench_v1`: this session's counts. They leave through Export and never touch the story file
 
 ## Measured platform facts
